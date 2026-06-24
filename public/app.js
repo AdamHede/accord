@@ -5,6 +5,7 @@ let socket = null;
 let drafts = {};
 let activeTurn = null;
 let toastTimer = null;
+let screenWakeLock = null;
 
 const $ = (selector) => document.querySelector(selector);
 const landing = $("#landing");
@@ -23,6 +24,8 @@ function faction(id) { return game?.factions.find((item) => item.id === id); }
 function player(id) { return game?.players.find((item) => item.id === id); }
 function ownPlayer() { return player(session?.playerId); }
 function ownUnits() { return game?.units.filter((unit) => unit.ownerId === session?.playerId) ?? []; }
+function isSpectator() { return ownPlayer()?.role === "spectator"; }
+function envoys() { return game?.players.filter((candidate) => candidate.role !== "spectator") ?? []; }
 function notify(message) { const toast = $("#toast"); toast.textContent = message; toast.classList.add("show"); clearTimeout(toastTimer); toastTimer = setTimeout(() => toast.classList.remove("show"), 3600); }
 
 async function api(path, options = {}) {
@@ -33,9 +36,38 @@ async function api(path, options = {}) {
 }
 
 function showGame() {
+  const spectator = isSpectator();
   landing.hidden = true;
   gameShell.hidden = false;
-  $("#room-meta").textContent = `ROOM ${session.roomCode}`;
+  gameShell.classList.toggle("spectator-mode", spectator);
+  $("#room-meta").textContent = spectator ? `ROOM ${session.roomCode} · SPECTATOR DISPLAY` : `ROOM ${session.roomCode}`;
+  $("#spectator-fullscreen").hidden = !spectator;
+  if (spectator) void requestScreenWakeLock();
+  else void releaseScreenWakeLock();
+}
+
+async function requestScreenWakeLock() {
+  if (!isSpectator() || document.visibilityState !== "visible" || screenWakeLock || !navigator.wakeLock?.request) return;
+  try {
+    screenWakeLock = await navigator.wakeLock.request("screen");
+    screenWakeLock.addEventListener("release", () => { screenWakeLock = null; });
+  } catch {
+    // Wake Lock is not supported everywhere or may be unavailable under a device policy.
+  }
+}
+
+async function releaseScreenWakeLock() {
+  if (!screenWakeLock) return;
+  const currentWakeLock = screenWakeLock;
+  screenWakeLock = null;
+  try { await currentWakeLock.release(); } catch { /* Already released by the browser. */ }
+}
+
+async function toggleFullscreen() {
+  try {
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else await gameShell.requestFullscreen();
+  } catch { notify("Fullscreen is not available in this browser."); }
 }
 
 function resetDrafts() {
@@ -75,23 +107,26 @@ function send(payload) {
 
 function renderStatus() {
   const ready = game.ordersSubmitted.length;
-  const playerCount = game.players.length;
+  const playerCount = envoys().length;
   const status = game.status === "lobby" ? "Council forming" : game.status === "finished" ? "Council concluded" : `Turn ${game.turn}`;
-  const copy = game.status === "lobby" ? "Choose a faction. The convener starts when every envoy is ready." : game.status === "finished" ? `${player(game.winnerId)?.name ?? "A rival"} has claimed the council.` : "Moves remain private until every envoy has committed.";
-  $("#status").innerHTML = `<div class="eyebrow">${escapeHtml(status)}</div><div class="status-title">${game.status === "orders" ? `${ready}/${playerCount} orders committed` : escapeHtml(status)}</div><p class="status-copy">${escapeHtml(copy)}</p>${game.status === "orders" ? `<p class="status-ready">${game.ordersSubmitted.includes(session.playerId) ? "YOUR ORDERS ARE SEALED" : "YOUR ORDERS ARE NOT YET COMMITTED"}</p>` : ""}`;
+  const spectator = isSpectator();
+  const copy = spectator ? "Public board display. Private negotiations and uncommitted orders remain hidden." : game.status === "lobby" ? "Choose a faction. The convener starts when every envoy is ready." : game.status === "finished" ? `${player(game.winnerId)?.name ?? "A rival"} has claimed the council.` : "Moves remain private until every envoy has committed.";
+  $("#status").innerHTML = `<div class="eyebrow">${escapeHtml(status)}</div><div class="status-title">${game.status === "orders" ? `${ready}/${playerCount} orders committed` : escapeHtml(status)}</div><p class="status-copy">${escapeHtml(copy)}</p>${game.status === "orders" && !spectator ? `<p class="status-ready">${game.ordersSubmitted.includes(session.playerId) ? "YOUR ORDERS ARE SEALED" : "YOUR ORDERS ARE NOT YET COMMITTED"}</p>` : ""}`;
+  $("#map-hint").textContent = spectator ? (game.status === "orders" ? `Live public board · Turn ${game.turn} · ${ready}/${playerCount} orders committed` : `Live public board · ${status}`) : "Set each order in the command panel; this map tracks resolved positions.";
 }
 
 function renderFactionPanel() {
   const panel = $("#faction-panel");
   const mine = ownPlayer();
-  if (game.status !== "lobby") { panel.hidden = true; return; }
+  if (isSpectator() || game.status !== "lobby") { panel.hidden = true; return; }
   panel.hidden = false;
   const choices = game.factions.map((choice) => {
     const owner = game.players.find((candidate) => candidate.faction === choice.id);
     const chosen = mine?.faction === choice.id;
     return `<button class="faction ${chosen ? "chosen" : ""}" style="--faction:${choice.color}" data-faction="${choice.id}" ${owner && !chosen ? "disabled" : ""}><strong>${escapeHtml(choice.name.replace(/ .*/, ""))}</strong><small>${owner ? (chosen ? "your banner" : `${escapeHtml(owner.name)} holds it`) : "available"}</small></button>`;
   }).join("");
-  const start = session.playerId === game.hostPlayerId ? `<button class="commit" id="start-game" ${game.players.length < 2 || game.players.some((candidate) => !candidate.faction) ? "disabled" : ""}>Begin council <span>→</span></button>` : `<p class="status-copy">Waiting for the convener to begin.</p>`;
+  const currentEnvoys = envoys();
+  const start = session.playerId === game.hostPlayerId ? `<button class="commit" id="start-game" ${currentEnvoys.length < 2 || currentEnvoys.some((candidate) => !candidate.faction) ? "disabled" : ""}>Begin council <span>→</span></button>` : `<p class="status-copy">Waiting for the convener to begin.</p>`;
   panel.innerHTML = `<h3>Choose your banner</h3><div class="faction-grid">${choices}</div>${start}`;
   panel.querySelectorAll("[data-faction]").forEach((button) => button.addEventListener("click", () => send({ type: "faction", factionId: button.dataset.faction })));
   $("#start-game")?.addEventListener("click", () => send({ type: "start" }));
@@ -100,7 +135,7 @@ function renderFactionPanel() {
 function orderLabel(unit) { const province = game.map.find((item) => item.id === unit.provinceId); return `${faction(unit.faction)?.name.split(" ")[0] ?? ""} army — ${province?.name ?? unit.provinceId}`; }
 function renderOrderPanel() {
   const panel = $("#order-panel");
-  if (game.status !== "orders") { panel.hidden = true; return; }
+  if (isSpectator() || game.status !== "orders") { panel.hidden = true; return; }
   panel.hidden = false;
   const committed = game.ordersSubmitted.includes(session.playerId);
   const rows = ownUnits().map((unit) => {
@@ -136,20 +171,20 @@ function renderMap() {
 }
 
 function renderScores() {
-  const scores = game.players.slice().sort((a, b) => (Object.values(game.control).filter((id) => id === b.id).length - Object.values(game.control).filter((id) => id === a.id).length)).map((candidate) => {
+  const scores = envoys().slice().sort((a, b) => (Object.values(game.control).filter((id) => id === b.id).length - Object.values(game.control).filter((id) => id === a.id).length)).map((candidate) => {
     const value = Object.values(game.control).filter((id) => id === candidate.id).length;
     const color = faction(candidate.faction)?.color ?? "#62718b";
     return `<div class="score-row"><i class="score-dot" style="background:${color}"></i><span>${escapeHtml(candidate.name)}<small> ${candidate.faction ? `· ${escapeHtml(faction(candidate.faction)?.name.split(" ")[0] ?? "")}` : ""}</small></span><strong>${value}/${game.victoryScore}</strong></div>`;
   }).join("");
   $("#scores").innerHTML = scores;
-  $("#legend").innerHTML = game.factions.filter((choice) => game.players.some((candidate) => candidate.faction === choice.id)).map((choice) => `<span class="legend-item"><i class="legend-swatch" style="background:${choice.color}"></i>${escapeHtml(choice.name)}</span>`).join("");
+  $("#legend").innerHTML = game.factions.filter((choice) => envoys().some((candidate) => candidate.faction === choice.id)).map((choice) => `<span class="legend-item"><i class="legend-swatch" style="background:${choice.color}"></i>${escapeHtml(choice.name)}</span>`).join("");
 }
 
 function renderChat() {
   const messages = game.chats.map((message) => `<div class="message ${message.recipientId ? "private" : ""}"><div class="message-head"><span>${escapeHtml(message.authorName)}${message.recipientId ? ` → ${escapeHtml(player(message.recipientId)?.name ?? "private")}` : ""}</span><span>${new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></div>${escapeHtml(message.body)}</div>`).join("") || `<p class="status-copy">No negotiations yet. Make the first offer.</p>`;
   $("#chat").innerHTML = messages;
   const selected = $("#chat-recipient").value;
-  $("#chat-recipient").innerHTML = `<option value="">Public council</option>${game.players.filter((candidate) => candidate.id !== session.playerId).map((candidate) => `<option value="${candidate.id}">Private: ${escapeHtml(candidate.name)}</option>`).join("")}`;
+  $("#chat-recipient").innerHTML = `<option value="">Public council</option>${envoys().filter((candidate) => candidate.id !== session.playerId).map((candidate) => `<option value="${candidate.id}">Private: ${escapeHtml(candidate.name)}</option>`).join("")}`;
   $("#chat-recipient").value = selected;
   $("#chat").scrollTop = $("#chat").scrollHeight;
 }
@@ -163,11 +198,19 @@ $("#create-form").addEventListener("submit", async (event) => {
 });
 $("#join-form").addEventListener("submit", async (event) => {
   event.preventDefault();
-  try { const roomCode = $("#join-code").value.toUpperCase().replace(/[^A-Z0-9]/g, ""); const result = await api(`/api/rooms/${roomCode}/join`, { method: "POST", body: JSON.stringify({ name: $("#join-name").value }) }); saveSession(result); game = result.state; activeTurn = game.turn; resetDrafts(); render(); openSocket(); } catch (reason) { $("#landing-error").textContent = reason.message; }
+  try { const roomCode = $("#join-code").value.toUpperCase().replace(/[^A-Z0-9]/g, ""); const result = await api(`/api/rooms/${roomCode}/join`, { method: "POST", body: JSON.stringify({ name: $("#join-name").value, role: $("#join-role").value }) }); saveSession(result); game = result.state; activeTurn = game.turn; resetDrafts(); render(); openSocket(); } catch (reason) { $("#landing-error").textContent = reason.message; }
 });
 $("#chat-form").addEventListener("submit", (event) => { event.preventDefault(); const input = $("#chat-input"); if (!input.value.trim()) return; send({ type: "chat", body: input.value, recipientId: $("#chat-recipient").value || null }); input.value = ""; });
 $("#copy-room").addEventListener("click", async () => { try { await navigator.clipboard.writeText(`${location.origin}/?room=${session.roomCode}`); notify("Invite link copied."); } catch { notify(`Room code: ${session.roomCode}`); } });
-$("#leave-room").addEventListener("click", () => { socket?.close(); localStorage.removeItem(sessionKey); session = null; game = null; location.href = "/"; });
+$("#spectator-fullscreen").addEventListener("click", () => { void toggleFullscreen(); });
+$("#leave-room").addEventListener("click", () => { socket?.close(); void releaseScreenWakeLock(); localStorage.removeItem(sessionKey); session = null; game = null; location.href = "/"; });
+
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") void requestScreenWakeLock(); });
+window.addEventListener("pagehide", () => { void releaseScreenWakeLock(); });
+document.addEventListener("fullscreenchange", () => { $("#spectator-fullscreen").textContent = document.fullscreenElement ? "Exit fullscreen" : "Fullscreen"; });
+
+const inviteRoomCode = new URLSearchParams(location.search).get("room")?.toUpperCase().replace(/[^A-Z0-9]/g, "");
+if (inviteRoomCode) $("#join-code").value = inviteRoomCode.slice(0, 6);
 
 if (session) {
   api(`/api/rooms/${session.roomCode}/state`, { headers: { "X-Player-Id": session.playerId, "X-Player-Token": session.playerToken } }).then((state) => { game = state; activeTurn = game.turn; resetDrafts(); render(); openSocket(); }).catch(() => { localStorage.removeItem(sessionKey); session = null; });

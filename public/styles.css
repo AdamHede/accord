@@ -100,5 +100,19 @@ textarea { min-height: 78px; resize: vertical; }
 #toast { position: fixed; z-index: 10; right: 18px; bottom: 18px; max-width: 340px; padding: 11px 14px; border: 1px solid rgba(237,199,107,.5); border-radius: 9px; background: #1c2b47; color: #f4eed6; box-shadow: 0 12px 40px rgba(0,0,0,.35); font-size: 12px; opacity: 0; transform: translateY(8px); pointer-events: none; transition: .18s; }
 #toast.show { opacity: 1; transform: translateY(0); }
 
+#game.spectator-mode .left-rail,
+#game.spectator-mode .right-rail { display: none; }
+#game.spectator-mode .game-layout { display: block; width: 100%; min-height: calc(100vh - 64px); margin: 0; }
+#game.spectator-mode .map-panel { display: flex; height: calc(100vh - 64px); min-height: 0; flex-direction: column; padding: clamp(22px, 3vw, 48px); border: 0; border-radius: 0; }
+#game.spectator-mode .map-header h2 { font-size: clamp(32px, 4vw, 58px); }
+#game.spectator-mode .map-header p { max-width: 360px; font-size: clamp(12px, 1.1vw, 16px); }
+#game.spectator-mode .map { min-height: 0; flex: 1; margin-top: clamp(20px, 3vh, 34px); }
+#game.spectator-mode .province { width: clamp(96px, 9vw, 144px); min-height: clamp(66px, 6vw, 86px); padding: clamp(8px, .8vw, 12px); border-radius: 12px; }
+#game.spectator-mode .province-name { font-size: clamp(10px, .9vw, 14px); }
+#game.spectator-mode .province-control { gap: 7px; margin-top: 7px; font-size: clamp(9px, .75vw, 12px); }
+#game.spectator-mode .unit-dot { width: clamp(17px, 1.5vw, 24px); height: clamp(17px, 1.5vw, 24px); font-size: clamp(9px, .8vw, 13px); }
+#game.spectator-mode .legend { gap: 16px; margin-top: 20px; font-size: clamp(11px, .9vw, 14px); }
+#game.spectator-mode .legend-swatch { width: 10px; height: 10px; }
+
 @media (max-width: 1120px) { .game-layout { grid-template-columns: minmax(220px, 280px) 1fr; } .right-rail { grid-column: 1 / -1; grid-template-columns: 230px 1fr; } .chat { min-height: 150px; max-height: 240px; } }
 @media (max-width: 760px) { .landing-grid, .game-layout, .right-rail { grid-template-columns: 1fr; } .landing { padding-top: 94px; } .topbar { gap: 9px; padding: 0 13px; } .room-meta { display: none; } .map-panel { min-height: 650px; padding: 18px 12px; } .map { min-height: 520px; overflow: auto; } .map-header p { display: none; } .province { width: 86px; } .right-rail { grid-column: auto; } .chat { max-height: 310px; } }

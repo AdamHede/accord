@@ -8,6 +8,7 @@ export const FACTIONS = [
 ] as const;
 
 export type FactionId = (typeof FACTIONS)[number]["id"];
+export type PlayerRole = "envoy" | "spectator";
 
 export interface Province {
   id: string;
@@ -45,6 +46,7 @@ export interface StoredPlayer {
   id: string;
   name: string;
   token: string;
+  role: PlayerRole;
   faction: FactionId | null;
   joinedAt: number;
 }
@@ -52,6 +54,7 @@ export interface StoredPlayer {
 export interface PublicPlayer {
   id: string;
   name: string;
+  role: PlayerRole;
   faction: FactionId | null;
   joinedAt: number;
 }
@@ -114,13 +117,23 @@ export interface GameView {
   victoryScore: number;
 }
 
+export function playerRole(player: Pick<StoredPlayer, "role"> | Pick<PublicPlayer, "role">): PlayerRole {
+  // Rooms created before spectator support did not store a role. Treat those
+  // records as envoys so persisted games continue to work after deployment.
+  return player.role === "spectator" ? "spectator" : "envoy";
+}
+
+export function isEnvoy(player: Pick<StoredPlayer, "role"> | Pick<PublicPlayer, "role">): boolean {
+  return playerRole(player) === "envoy";
+}
+
 export function publicView(game: Game, playerId: string): GameView {
   return {
     roomCode: game.roomCode,
     hostPlayerId: game.hostPlayerId,
     status: game.status,
     turn: game.turn,
-    players: game.players.map(({ token: _token, ...player }) => player),
+    players: game.players.map(({ token: _token, ...player }) => ({ ...player, role: playerRole(player) })),
     units: game.units,
     control: game.control,
     ordersSubmitted: Object.keys(game.orders),

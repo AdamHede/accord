@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { Game, resolveTurn, StoredPlayer, Unit, validateOrders } from "../src/engine";
 
-const alice: StoredPlayer = { id: "alice", name: "Alice", token: "a", faction: "ivory", joinedAt: 0 };
-const bruno: StoredPlayer = { id: "bruno", name: "Bruno", token: "b", faction: "azure", joinedAt: 0 };
+const alice: StoredPlayer = { id: "alice", name: "Alice", token: "a", role: "envoy", faction: "ivory", joinedAt: 0 };
+const bruno: StoredPlayer = { id: "bruno", name: "Bruno", token: "b", role: "envoy", faction: "azure", joinedAt: 0 };
 
 function gameWith(units: Unit[]): Game {
   return {
