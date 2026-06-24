@@ -22,8 +22,14 @@
           <form id="join-form" class="card form-card">
             <h2>Join a council</h2>
             <label>Room code <input id="join-code" maxlength="6" autocomplete="off" placeholder="ABC123" required /></label>
-            <label>Envoy name <input id="join-name" maxlength="24" placeholder="Your name" required /></label>
-            <button type="submit" class="secondary">Join room <span>→</span></button>
+            <label>Display name <input id="join-name" maxlength="24" placeholder="Your name" required /></label>
+            <label>Join as
+              <select id="join-role">
+                <option value="envoy">Envoy — choose a faction and play</option>
+                <option value="spectator">Spectator — public map display</option>
+              </select>
+            </label>
+            <button type="submit" class="secondary">Enter room <span>→</span></button>
           </form>
         </div>
         <p id="landing-error" class="error"></p>
@@ -34,6 +40,7 @@
           <a class="brand" href="/">ACCORD</a>
           <div id="room-meta" class="room-meta"></div>
           <button id="copy-room" class="quiet" type="button">Copy invite</button>
+          <button id="spectator-fullscreen" class="quiet" type="button" hidden>Fullscreen</button>
           <button id="leave-room" class="quiet" type="button">Leave</button>
         </header>
         <div class="game-layout">
