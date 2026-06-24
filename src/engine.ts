@@ -1,10 +1,9 @@
 export const FACTIONS = [
-  { id: "ivory", name: "Ivory Compact", color: "#dce9f1", homes: ["frosthold", "wintermere"] },
-  { id: "azure", name: "Azure League", color: "#4da1d8", homes: ["tidewatch", "seabreak"] },
-  { id: "verdant", name: "Verdant Pact", color: "#70bd76", homes: ["greenfall", "briarwatch"] },
-  { id: "violet", name: "Violet Court", color: "#a789d4", homes: ["moonbridge", "duskford"] },
-  { id: "aurum", name: "Aurum Assembly", color: "#e5b84d", homes: ["amberfield", "stonegate"] },
-  { id: "cinder", name: "Cinder Dominion", color: "#db6e58", homes: ["ashfen", "redreach"] }
+  { id: "north-american-union", name: "North American Union", color: "#3b82f6", homes: ["ena", "gla", "cal"] },
+  { id: "european-compact", name: "European Compact", color: "#a855f7", homes: ["bri", "weu", "ceu"] },
+  { id: "afro-arabian-league", name: "Afro-Arabian League", color: "#d97706", homes: ["waf", "egy", "ara"] },
+  { id: "asian-coalition", name: "Asian Coalition", color: "#ef4444", homes: ["ind", "chi", "jak"] },
+  { id: "southern-maritime-league", name: "Southern Maritime League", color: "#22c55e", homes: ["cap", "mal", "aus"] }
 ] as const;
 
 export type FactionId = (typeof FACTIONS)[number]["id"];
@@ -15,32 +14,49 @@ export interface Province {
   name: string;
   x: number;
   y: number;
+  kind: "home" | "neutral" | "buffer";
+  seaNeighbors: string[];
   neighbors: string[];
 }
 
-const provinceRows = [
-  ["frosthold", "Frosthold"], ["wintermere", "Wintermere"], ["pass", "King's Pass"], ["tidewatch", "Tidewatch"], ["seabreak", "Seabreak"], ["cape", "Cape Solace"],
-  ["greenfall", "Greenfall"], ["briarwatch", "Briarwatch"], ["crossroads", "The Crossroads"], ["moonbridge", "Moonbridge"], ["duskford", "Duskford"], ["rivergate", "Rivergate"],
-  ["amberfield", "Amberfield"], ["stonegate", "Stonegate"], ["furnace", "Old Furnace"], ["ashfen", "Ashfen"], ["redreach", "Redreach"], ["shrine", "Sunken Shrine"]
+type ProvinceDefinition = readonly [id: string, name: string, x: number, y: number, kind: Province["kind"]];
+type ConnectionDefinition = readonly [a: string, b: string, kind: "land" | "sea"];
+
+// Coordinates are deliberately laid out as a world map rather than a grid.  The
+// graph below is the game rule: the visual board is only a projection of it.
+const provinceDefinitions: ProvinceDefinition[] = [
+  ["ena", "Eastern North America", 29.17, 24.44, "home"], ["gla", "Great Lakes", 25.56, 22.22, "home"], ["cal", "California", 16.67, 28.15, "home"], ["awc", "Alaska & Western Canada", 12.5, 11.11, "buffer"], ["mex", "Mexico", 21.67, 39.26, "neutral"], ["yuc", "Yucatán & Central Mexico", 25.56, 41.48, "buffer"], ["pan", "Panama Canal", 27.78, 48.89, "neutral"], ["car", "Caribbean Islands", 30, 40.74, "neutral"],
+  ["ama", "Amazon Basin", 32.5, 59.26, "buffer"], ["bra", "Brazil", 36.94, 66.67, "neutral"], ["and", "Andes", 30, 67.41, "neutral"], ["pat", "Patagonia & Southern Cone", 31.11, 88.89, "buffer"],
+  ["bri", "Britain & Ireland", 49.17, 15.56, "home"], ["weu", "Western Europe", 50.56, 20.74, "home"], ["ceu", "Central Europe", 53.89, 18.52, "home"], ["sca", "Scandinavia", 54.44, 8.89, "neutral"], ["ibe", "Iberia", 48.89, 25.93, "neutral"], ["bal", "Balkans", 55.83, 23.7, "buffer"], ["ana", "Anatolia", 59.72, 26.67, "buffer"], ["eeu", "Eastern Europe & Ukraine", 58.89, 18.52, "buffer"],
+  ["mag", "Maghreb", 48.61, 32.59, "neutral"], ["lib", "Libya & North Africa", 55, 34.07, "buffer"], ["waf", "West Africa", 49.72, 49.63, "home"], ["con", "Congo & Sahel", 56.11, 55.56, "buffer"], ["egy", "Egypt & Suez", 58.33, 35.56, "home"], ["lev", "Levant", 60, 31.85, "buffer"], ["ara", "Arabia", 62.5, 40, "home"], ["per", "Mesopotamia & Persia", 64.72, 31.85, "neutral"], ["eaf", "East Africa & Horn", 61.67, 52.59, "neutral"], ["cap", "Southern Africa & Cape", 56.94, 77.78, "home"],
+  ["ind", "India", 71.67, 39.26, "home"], ["cas", "Central Asia", 68.61, 22.22, "neutral"], ["ste", "Kazakh Steppe", 67.5, 17.78, "buffer"], ["sib", "Siberia", 76.39, 11.11, "neutral"], ["mon", "Mongolia", 78.61, 20.74, "buffer"], ["chi", "China", 80.56, 30.37, "home"], ["man", "Manchuria", 84.44, 22.22, "buffer"], ["jak", "Japan & Korea", 88.06, 27.41, "home"], ["sea", "Southeast Asia", 79.17, 45.93, "neutral"], ["mal", "Indonesia & Malacca", 81.11, 57.04, "home"],
+  ["png", "New Guinea & Arafura", 90.28, 59.26, "buffer"], ["aus", "Australia", 87.5, 74.07, "home"]
+] as const;
+
+const connectionDefinitions: ConnectionDefinition[] = [
+  ["ena", "gla", "land"], ["gla", "cal", "land"], ["cal", "awc", "land"], ["ena", "mex", "land"], ["cal", "mex", "land"], ["mex", "yuc", "land"], ["yuc", "pan", "land"], ["pan", "car", "sea"], ["car", "ena", "sea"], ["pan", "and", "land"], ["pan", "ama", "land"],
+  ["and", "ama", "land"], ["ama", "bra", "land"], ["bra", "pat", "land"], ["and", "pat", "land"], ["car", "bra", "sea"],
+  ["bri", "weu", "sea"], ["bri", "sca", "sea"], ["weu", "ceu", "land"], ["weu", "ibe", "land"], ["ceu", "sca", "land"], ["ceu", "eeu", "land"], ["ceu", "bal", "land"], ["eeu", "bal", "land"], ["bal", "ana", "land"], ["ana", "lev", "land"], ["eeu", "ste", "land"],
+  ["ibe", "mag", "sea"], ["mag", "lib", "land"], ["lib", "egy", "land"], ["mag", "waf", "land"], ["waf", "con", "land"], ["con", "eaf", "land"], ["con", "cap", "land"], ["egy", "lev", "land"], ["egy", "eaf", "land"], ["lev", "ara", "land"], ["lev", "per", "land"], ["ara", "per", "land"], ["ara", "eaf", "sea"], ["eaf", "cap", "land"], ["mag", "egy", "sea"],
+  ["per", "ind", "land"], ["per", "cas", "land"], ["ind", "cas", "land"], ["ind", "sea", "land"], ["sea", "chi", "land"], ["sea", "mal", "land"], ["chi", "mon", "land"], ["chi", "man", "land"], ["man", "jak", "sea"], ["mon", "sib", "land"], ["mon", "cas", "land"], ["ste", "cas", "land"], ["ste", "sib", "land"], ["sib", "awc", "sea"], ["sib", "jak", "sea"],
+  ["mal", "png", "sea"], ["png", "aus", "sea"], ["mal", "aus", "sea"], ["cap", "aus", "sea"], ["mal", "ind", "sea"], ["mal", "sea", "sea"]
 ] as const;
 
 function createMap(): Record<string, Province> {
-  const map: Record<string, Province> = {};
-  provinceRows.forEach(([id, name], index) => {
-    const row = Math.floor(index / 6);
-    const column = index % 6;
-    const neighbors: string[] = [];
-    if (column > 0) neighbors.push(provinceRows[index - 1][0]);
-    if (column < 5) neighbors.push(provinceRows[index + 1][0]);
-    if (row > 0) neighbors.push(provinceRows[index - 6][0]);
-    if (row < 2) neighbors.push(provinceRows[index + 6][0]);
-    map[id] = { id, name, x: 10 + column * 16, y: 18 + row * 32, neighbors };
-  });
+  const map = Object.fromEntries(provinceDefinitions.map(([id, name, x, y, kind]) => [id, { id, name, x, y, kind, neighbors: [], seaNeighbors: [] }])) as Record<string, Province>;
+  for (const [a, b, kind] of connectionDefinitions) {
+    map[a].neighbors.push(b);
+    map[b].neighbors.push(a);
+    if (kind === "sea") {
+      map[a].seaNeighbors.push(b);
+      map[b].seaNeighbors.push(a);
+    }
+  }
   return map;
 }
 
 export const PROVINCES = createMap();
-export const VICTORY_SCORE = 7;
+export const VICTORY_SCORE = 16;
 
 export interface StoredPlayer {
   id: string;

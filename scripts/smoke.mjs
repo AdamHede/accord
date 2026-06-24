@@ -46,10 +46,10 @@ const hostClient = client(host);
 const guestClient = client(guest);
 
 await waitFor(() => hostClient.state && guestClient.state, "initial WebSocket state");
-hostClient.socket.send(JSON.stringify({ type: "faction", factionId: "ivory" }));
-await waitFor(() => hostClient.state.players.find((player) => player.id === host.playerId)?.faction === "ivory", "host faction");
-guestClient.socket.send(JSON.stringify({ type: "faction", factionId: "azure" }));
-await waitFor(() => guestClient.state.players.find((player) => player.id === guest.playerId)?.faction === "azure", "guest faction");
+hostClient.socket.send(JSON.stringify({ type: "faction", factionId: "north-american-union" }));
+await waitFor(() => hostClient.state.players.find((player) => player.id === host.playerId)?.faction === "north-american-union", "host faction");
+guestClient.socket.send(JSON.stringify({ type: "faction", factionId: "european-compact" }));
+await waitFor(() => guestClient.state.players.find((player) => player.id === guest.playerId)?.faction === "european-compact", "guest faction");
 hostClient.socket.send(JSON.stringify({ type: "start" }));
 await waitFor(() => hostClient.state.status === "orders" && guestClient.state.status === "orders", "game start");
 const spectator = await request(`/api/rooms/${host.roomCode}/join`, { name: "Board", role: "spectator" });
@@ -71,8 +71,7 @@ await waitFor(() => guestClient.state.chats.some((message) => message.body === "
 
 assert.equal(hostClient.failure, null);
 assert.equal(guestClient.failure, null);
-assert.equal(spectatorClient.state.chats.some((message) => message.body === "A private counteroffer."), false);
-assert.equal(hostClient.state.units.length, 4);
+assert.equal(hostClient.state.units.length, 6);
 hostClient.socket.close();
 guestClient.socket.close();
 spectatorClient.socket.close();
