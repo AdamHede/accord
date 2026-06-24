@@ -52,18 +52,27 @@ guestClient.socket.send(JSON.stringify({ type: "faction", factionId: "european-c
 await waitFor(() => guestClient.state.players.find((player) => player.id === guest.playerId)?.faction === "european-compact", "guest faction");
 hostClient.socket.send(JSON.stringify({ type: "start" }));
 await waitFor(() => hostClient.state.status === "orders" && guestClient.state.status === "orders", "game start");
+const spectator = await request(`/api/rooms/${host.roomCode}/join`, { name: "Board", role: "spectator" });
+const spectatorClient = client(spectator);
+await waitFor(() => spectatorClient.state, "spectator WebSocket state");
+assert.equal(spectatorClient.state.players.find((player) => player.id === spectator.playerId)?.role, "spectator");
+spectatorClient.socket.send(JSON.stringify({ type: "orders", orders: [] }));
+await waitFor(() => spectatorClient.failure?.message === "Spectators cannot submit orders.", "spectator order rejection");
 
 for (const current of [hostClient, guestClient]) {
   const ownUnits = current.state.units.filter((unit) => unit.ownerId === (current === hostClient ? host.playerId : guest.playerId));
   current.socket.send(JSON.stringify({ type: "orders", orders: ownUnits.map((unit) => ({ unitId: unit.id, type: "hold" })) }));
 }
-await waitFor(() => hostClient.state.turn === 2 && guestClient.state.turn === 2, "simultaneous resolution");
+await waitFor(() => hostClient.state.turn === 2 && guestClient.state.turn === 2 && spectatorClient.state.turn === 2, "simultaneous resolution");
 hostClient.socket.send(JSON.stringify({ type: "chat", body: "A public proposal for peace.", recipientId: null }));
-await waitFor(() => guestClient.state.chats.some((message) => message.body === "A public proposal for peace."), "chat broadcast");
+await waitFor(() => guestClient.state.chats.some((message) => message.body === "A public proposal for peace.") && spectatorClient.state.chats.some((message) => message.body === "A public proposal for peace."), "chat broadcast");
+hostClient.socket.send(JSON.stringify({ type: "chat", body: "A private counteroffer.", recipientId: guest.playerId }));
+await waitFor(() => guestClient.state.chats.some((message) => message.body === "A private counteroffer."), "private chat delivery");
 
 assert.equal(hostClient.failure, null);
 assert.equal(guestClient.failure, null);
 assert.equal(hostClient.state.units.length, 6);
 hostClient.socket.close();
 guestClient.socket.close();
+spectatorClient.socket.close();
 console.log(`smoke passed for room ${host.roomCode}`);
