@@ -2,6 +2,7 @@
   "name": "accord",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "description": "A real-time, diplomacy-inspired strategy game on Cloudflare Durable Objects.",
   "scripts": {
     "dev": "wrangler dev",
@@ -9,7 +10,8 @@
     "types": "wrangler types",
     "check": "npm run types && tsc --noEmit",
     "test": "vitest run",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "simulate": "tsc -p tsconfig.simulator.json && node .simulator-output/src/simulate.js"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
