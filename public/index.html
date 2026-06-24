@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#11192c" />
+    <title>Accord — simultaneous strategy</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main>
+      <section id="landing" class="landing">
+        <div class="eyebrow">A simultaneous strategy game</div>
+        <h1>Accord</h1>
+        <p class="lede">A private council of envoys. Negotiate openly or in secret, then commit moves at the same time.</p>
+        <div class="landing-grid">
+          <form id="create-form" class="card form-card">
+            <h2>Convene a council</h2>
+            <label>Envoy name <input id="create-name" maxlength="24" placeholder="Your name" required /></label>
+            <button type="submit">Create room <span>→</span></button>
+          </form>
+          <form id="join-form" class="card form-card">
+            <h2>Join a council</h2>
+            <label>Room code <input id="join-code" maxlength="6" autocomplete="off" placeholder="ABC123" required /></label>
+            <label>Envoy name <input id="join-name" maxlength="24" placeholder="Your name" required /></label>
+            <button type="submit" class="secondary">Join room <span>→</span></button>
+          </form>
+        </div>
+        <p id="landing-error" class="error"></p>
+      </section>
+
+      <section id="game" hidden>
+        <header class="topbar">
+          <a class="brand" href="/">ACCORD</a>
+          <div id="room-meta" class="room-meta"></div>
+          <button id="copy-room" class="quiet" type="button">Copy invite</button>
+          <button id="leave-room" class="quiet" type="button">Leave</button>
+        </header>
+        <div class="game-layout">
+          <aside class="left-rail">
+            <section class="panel"><div id="status"></div></section>
+            <section id="faction-panel" class="panel"></section>
+            <section id="order-panel" class="panel"></section>
+            <section class="panel activity-panel"><h3>Dispatches</h3><div id="activity" class="activity"></div></section>
+          </aside>
+          <section class="map-panel">
+            <div class="map-header"><div><span class="eyebrow">The known realm</span><h2>The Shattered Coast</h2></div><p id="map-hint">Set each order in the command panel; this map tracks resolved positions.</p></div>
+            <div id="map" class="map" aria-label="Game map"></div>
+            <div id="legend" class="legend"></div>
+          </section>
+          <aside class="right-rail">
+            <section class="panel score-panel"><h3>Influence</h3><div id="scores"></div></section>
+            <section class="panel chat-panel"><div class="panel-title"><h3>Negotiations</h3><span id="connection" class="connection">connecting</span></div><div id="chat" class="chat"></div><form id="chat-form" class="chat-form"><select id="chat-recipient"></select><textarea id="chat-input" maxlength="400" placeholder="Propose an accord…"></textarea><button type="submit">Send</button></form></section>
+          </aside>
+        </div>
+      </section>
+    </main>
+    <div id="toast" role="status" aria-live="polite"></div>
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
