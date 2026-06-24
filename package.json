@@ -7,7 +7,7 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "types": "wrangler types",
-    "check": "tsc --noEmit",
+    "check": "npm run types && tsc --noEmit",
     "test": "vitest run",
     "smoke": "node scripts/smoke.mjs"
   },
