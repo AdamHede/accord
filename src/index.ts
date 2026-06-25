@@ -1,14 +1,16 @@
 import { DurableObject } from "cloudflare:workers";
 import {
   createInitialUnits,
+  createInitialControl,
   factionById,
   FACTIONS,
   Game,
   isEnvoy,
+  normalizeGame,
   normalizeMessage,
   normalizeName,
-  Order,
   publicView,
+  requiredSubmitterIds,
   resolveTurn,
   StoredPlayer,
   validateOrders
@@ -77,7 +79,8 @@ async function requestBody(request: Request): Promise<Record<string, unknown> | 
 
 export class GameRoom extends DurableObject<Env> {
   private async readGame(): Promise<Game | null> {
-    return (await this.ctx.storage.get<Game>("game")) ?? null;
+    const game = (await this.ctx.storage.get<Game>("game")) ?? null;
+    return game ? normalizeGame(game) : null;
   }
 
   private async writeGame(game: Game): Promise<void> {
@@ -109,10 +112,14 @@ export class GameRoom extends DurableObject<Env> {
       hostPlayerId: player.id,
       status: "lobby",
       turn: 1,
+      year: 1,
+      season: "spring",
       players: [player],
       units: [],
       control: {},
       orders: {},
+      pendingRetreats: {},
+      adjustmentNeeds: {},
       chats: [],
       activity: [{ id: crypto.randomUUID(), text: `${player.name} convened a new council.`, createdAt: now }],
       winnerId: null
@@ -162,19 +169,26 @@ export class GameRoom extends DurableObject<Env> {
     if (envoys.length < 2) throw new Error("At least two envoys are required.");
     if (envoys.some((candidate) => !candidate.faction)) throw new Error("Every envoy must choose a faction first.");
     game.status = "orders";
+    game.year = 1;
+    game.season = "spring";
     game.units = createInitialUnits(game);
-    game.control = Object.fromEntries(game.units.map((unit) => [unit.provinceId, unit.ownerId]));
-    game.activity.unshift({ id: crypto.randomUUID(), text: "The council has begun. Orders are simultaneous and secret until everyone commits.", createdAt: Date.now() });
+    game.control = createInitialControl(game);
+    game.pendingRetreats = {};
+    game.adjustmentNeeds = {};
+    game.orders = {};
+    game.activity.unshift({ id: crypto.randomUUID(), text: "The council has begun. Spring orders are simultaneous and secret until everyone commits.", createdAt: Date.now() });
     game.activity = game.activity.slice(0, 8);
   }
 
   private async submitOrders(game: Game, player: StoredPlayer, submitted: unknown): Promise<void> {
     if (!isEnvoy(player)) throw new Error("Spectators cannot submit orders.");
-    if (game.status !== "orders") throw new Error("The council is not accepting orders.");
+    if (game.status !== "orders" && game.status !== "retreats" && game.status !== "adjustments") throw new Error("The council is not accepting orders.");
+    if (!requiredSubmitterIds(game).includes(player.id)) throw new Error("You do not have orders due in this phase.");
     game.orders[player.id] = validateOrders(game, player.id, submitted);
-    game.activity.unshift({ id: crypto.randomUUID(), text: `${player.name} has committed orders.`, createdAt: Date.now() });
+    const phase = game.status === "orders" ? "orders" : game.status === "retreats" ? "retreats" : "adjustments";
+    game.activity.unshift({ id: crypto.randomUUID(), text: `${player.name} has committed ${phase}.`, createdAt: Date.now() });
     game.activity = game.activity.slice(0, 8);
-    if (game.players.filter(isEnvoy).every((candidate) => game.orders[candidate.id])) resolveTurn(game, () => crypto.randomUUID());
+    if (requiredSubmitterIds(game).every((playerId) => game.orders[playerId])) resolveTurn(game, () => crypto.randomUUID());
   }
 
   private async sendChat(game: Game, player: StoredPlayer, body: unknown, recipientId: unknown): Promise<void> {

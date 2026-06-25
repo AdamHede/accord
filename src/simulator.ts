@@ -1,10 +1,13 @@
 import {
+  canProvinceHostUnit,
+  createInitialControl,
   createInitialUnits,
   FACTIONS,
   type FactionId,
   type Game,
   type Order,
   PROVINCES,
+  requiredSubmitterIds,
   resolveTurn,
   scoreFor,
   type StoredPlayer,
@@ -26,7 +29,7 @@ export interface SimulationOptions {
   games?: number;
   /** Stop an unresolved game after this many turns. Defaults to 500. */
   maxTurns?: number;
-  /** Number of factions in each game, between 2 and 6. Defaults to 6. */
+  /** Number of factions in each game, between 2 and the faction count. Defaults to all factions. */
   playerCount?: number;
   /** Strategies sampled independently for each player, with replacement. */
   strategies?: readonly StrategyName[];
@@ -161,6 +164,7 @@ export function spawnSimulationGame(options: ResolvedSimulationOptions, random: 
     id: `sim-${String(index + 1).padStart(4, "0")}`,
     name: `Simulator ${index + 1}`,
     token: `simulation-token-${index + 1}`,
+    role: "envoy",
     faction: faction.id,
     joinedAt: 0
   }));
@@ -169,16 +173,20 @@ export function spawnSimulationGame(options: ResolvedSimulationOptions, random: 
     hostPlayerId: players[0].id,
     status: "orders",
     turn: 1,
+    year: 1,
+    season: "spring",
     players,
     units: [],
     control: {},
     orders: {},
+    pendingRetreats: {},
+    adjustmentNeeds: {},
     chats: [],
     activity: [],
     winnerId: null
   };
   game.units = createInitialUnits(game);
-  game.control = Object.fromEntries(game.units.map((unit) => [unit.provinceId, unit.ownerId]));
+  game.control = createInitialControl(game);
 
   return {
     game,
@@ -186,9 +194,17 @@ export function spawnSimulationGame(options: ResolvedSimulationOptions, random: 
   };
 }
 
+function canMoveDirect(unit: Unit, destination: string): boolean {
+  const origin = PROVINCES[unit.provinceId];
+  const target = PROVINCES[destination];
+  if (!origin || !target || !origin.neighbors.includes(destination)) return false;
+  if (unit.type === "army") return origin.kind !== "sea" && target.kind !== "sea";
+  return canProvinceHostUnit(destination, "fleet") && (origin.kind === "sea" || target.kind === "sea");
+}
+
 function availableDestinations(game: Game, unit: Unit, reservedDestinations: Set<string>): string[] {
   const occupied = new Set(game.units.map((candidate) => candidate.provinceId));
-  return PROVINCES[unit.provinceId].neighbors.filter((provinceId) => !occupied.has(provinceId) && !reservedDestinations.has(provinceId));
+  return PROVINCES[unit.provinceId].neighbors.filter((provinceId) => canMoveDirect(unit, provinceId) && !occupied.has(provinceId) && !reservedDestinations.has(provinceId));
 }
 
 function enemyUnitNeighbors(game: Game, provinceId: string, ownerId: string): number {
@@ -213,8 +229,7 @@ function chooseCautiousDestination(game: Game, ownerId: string, destinations: st
   return choose(neutral.filter((destination) => enemyUnitNeighbors(game, destination, ownerId) === lowestThreat), random);
 }
 
-/** Produce a complete, valid set of simultaneous orders for one simulated player. */
-export function chooseOrders(game: Game, playerId: string, strategy: StrategyName, random: Random): Order[] {
+function chooseMovementOrders(game: Game, playerId: string, strategy: StrategyName, random: Random): Order[] {
   const reservedDestinations = new Set<string>();
   const orders: Order[] = [];
 
@@ -241,6 +256,45 @@ export function chooseOrders(game: Game, playerId: string, strategy: StrategyNam
     orders.push({ unitId: unit.id, type: "move", destination });
   }
   return orders;
+}
+
+function chooseRetreatOrders(game: Game, playerId: string, random: Random): Order[] {
+  return Object.values(game.pendingRetreats)
+    .filter((retreat) => game.units.find((unit) => unit.id === retreat.unitId)?.ownerId === playerId)
+    .map((retreat) => retreat.destinations.length > 0 ? { unitId: retreat.unitId, type: "retreat", destination: choose(retreat.destinations, random) } : { unitId: retreat.unitId, type: "disband" });
+}
+
+function chooseAdjustmentOrders(game: Game, playerId: string, random: Random): Order[] {
+  const need = game.adjustmentNeeds[playerId] ?? 0;
+  if (need === 0) return [];
+  const ownedUnits = game.units.filter((unit) => unit.ownerId === playerId);
+  if (need < 0) return shuffled(ownedUnits, random).slice(0, Math.abs(need)).map((unit) => ({ unitId: unit.id, type: "disband" }));
+
+  const player = game.players.find((candidate) => candidate.id === playerId);
+  const occupied = new Set(game.units.map((unit) => unit.provinceId));
+  const options = Object.values(PROVINCES)
+    .filter((province) => province.supplyCenter === "home" && province.homeFactionId === player?.faction && game.control[province.id] === playerId && !occupied.has(province.id))
+    .flatMap((province) => [
+      { type: "build" as const, provinceId: province.id, unitType: "army" as const },
+      ...(canProvinceHostUnit(province.id, "fleet") ? [{ type: "build" as const, provinceId: province.id, unitType: "fleet" as const }] : [])
+    ]);
+  const builds: Order[] = [];
+  const used = new Set<string>();
+  for (const option of shuffled(options, random)) {
+    if (builds.length >= need) break;
+    if (used.has(option.provinceId)) continue;
+    used.add(option.provinceId);
+    builds.push(option);
+  }
+  while (builds.length < need) builds.push({ type: "waive" });
+  return builds;
+}
+
+/** Produce a complete, valid set of orders for one simulated player in the current phase. */
+export function chooseOrders(game: Game, playerId: string, strategy: StrategyName, random: Random): Order[] {
+  if (game.status === "retreats") return chooseRetreatOrders(game, playerId, random);
+  if (game.status === "adjustments") return chooseAdjustmentOrders(game, playerId, random);
+  return chooseMovementOrders(game, playerId, strategy, random);
 }
 
 function emptyStats(): MutableStats {
@@ -282,8 +336,8 @@ export function runSimulation(input: SimulationOptions = {}): SimulationReport {
     lineups[lineup] = lineupStats;
 
     let turns = 0;
-    while (game.status === "orders" && turns < options.maxTurns) {
-      for (const player of game.players) {
+    while (game.status !== "finished" && turns < options.maxTurns) {
+      for (const player of game.players.filter((candidate) => requiredSubmitterIds(game).includes(candidate.id))) {
         game.orders[player.id] = chooseOrders(game, player.id, strategiesByPlayerId[player.id], random);
       }
       resolveTurn(game, () => `simulation-event-${++eventId}`);

@@ -6,13 +6,14 @@ import {
   runSimulation,
   spawnSimulationGame
 } from "../src/simulator";
+import { FACTIONS } from "../src/engine";
 
 describe("headless simulator", () => {
   it("randomly assigns strategies with replacement when spawning players", () => {
     const options = resolveSimulationOptions({ games: 1, strategies: ["random", "expansionist"] });
     const game = spawnSimulationGame(options, () => 0);
 
-    expect(Object.values(game.strategiesByPlayerId)).toEqual(["random", "random", "random", "random", "random", "random"]);
+    expect(Object.values(game.strategiesByPlayerId)).toEqual(Array.from({ length: FACTIONS.length }, () => "random"));
   });
 
   it("produces complete orders without sending two of one player's units to the same destination", () => {
@@ -22,7 +23,7 @@ describe("headless simulator", () => {
     const orders = chooseOrders(game, player.id, "expansionist", createSeededRandom("moves"));
     const destinations = orders.filter((order) => order.type === "move").map((order) => order.destination);
 
-    expect(orders).toHaveLength(2);
+    expect(orders).toHaveLength(game.units.filter((unit) => unit.ownerId === player.id).length);
     expect(new Set(destinations).size).toBe(destinations.length);
   });
 
@@ -33,7 +34,7 @@ describe("headless simulator", () => {
 
     expect(report.completedGames).toBe(12);
     expect(report.wins + report.draws).toBe(12);
-    expect(strategyAppearances).toBe(12 * 6);
+    expect(strategyAppearances).toBe(12 * FACTIONS.length);
     expect(strategyWins).toBe(report.wins);
   });
 
