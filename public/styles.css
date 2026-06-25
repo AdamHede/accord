@@ -74,6 +74,8 @@ textarea { min-height: 78px; resize: vertical; }
 .province-home .province-marker { width: 16px; height: 16px; border-width: 2px; background: var(--province-color, #edc76b); }
 .province-neutral .province-marker { background: #f3ead4; }
 .province-buffer .province-marker { width: 11px; height: 11px; background: #80909b; }
+.province-sea .province-marker { width: 9px; height: 9px; border-color: rgba(120,222,214,.74); background: rgba(120,222,214,.36); box-shadow: 0 0 0 2px rgba(120,222,214,.14), 0 2px 5px rgba(0,0,0,.55); }
+.province-sea .province-name { color: rgba(190, 250, 245, .72); font-family: "DM Mono", monospace; font-size: clamp(6px, .6vw, 9px); text-transform: uppercase; }
 .province.controlled .province-marker { background: var(--province-color); box-shadow: 0 2px 5px rgba(0,0,0,.55), 0 0 0 2px color-mix(in srgb, var(--province-color) 38%, transparent); }
 .province:hover .province-marker { transform: translate(-50%, -50%) scale(1.25); box-shadow: 0 0 0 4px rgba(114,203,207,.22), 0 2px 5px rgba(0,0,0,.55); }
 .province.selected-destination .province-marker { outline: 2px solid var(--gold); outline-offset: 3px; animation: destination-pulse 1.3s ease-in-out infinite; }
@@ -88,6 +90,7 @@ textarea { min-height: 78px; resize: vertical; }
 .label-s { left: 50%; top: 19px; transform: translateX(-50%); text-align: center; }
 .unit-dot { position: relative; display: inline-grid; width: 9px; height: 9px; place-items: center; border: 1px solid rgba(255,255,255,.86); border-radius: 50%; color: #121b25; font-size: 6px; font-weight: 900; box-shadow: 0 1px 2px rgba(0,0,0,.35); }
 .unit-dot + .unit-dot { margin-left: -5px; }
+.unit-dot.retreating { outline: 2px solid var(--danger); outline-offset: 1px; }
 @keyframes destination-pulse { 50% { outline-color: #fff0a3; } }
 .legend { display: flex; flex-wrap: wrap; gap: 8px 12px; margin-top: 17px; color: var(--muted); font-size: 10px; }
 .legend-item { display: flex; align-items: center; gap: 5px; }
@@ -96,6 +99,7 @@ textarea { min-height: 78px; resize: vertical; }
 .legend-node.home { width: 11px; height: 11px; background: var(--gold); border: 2px solid #f3ead4; }
 .legend-node.neutral { background: #f3ead4; }
 .legend-node.buffer { background: #80909b; }
+.legend-node.sea { background: rgba(120,222,214,.5); border-color: #78ded6; }
 .legend-route { width: 18px; border-top: 2px dashed #78ded6; }
 
 .status-title { margin: 4px 0 7px; font: 500 20px Fraunces, serif; }
@@ -109,6 +113,8 @@ textarea { min-height: 78px; resize: vertical; }
 .order-row { padding: 9px; border-radius: 8px; background: rgba(7, 15, 28, .35); }
 .order-row label { font-size: 10px; }
 .order-row select { margin-top: 5px; padding: 8px; font-size: 11px; }
+.order-check { display: flex; grid-template-columns: auto 1fr; align-items: center; gap: 8px; padding: 9px; border-radius: 8px; background: rgba(7, 15, 28, .35); font-size: 11px; }
+.order-check input { width: auto; margin: 0; }
 .commit { margin-top: 13px; background: var(--gold); }
 .activity { display: grid; gap: 10px; max-height: 180px; overflow: auto; margin-top: 13px; }
 .activity-item { padding-left: 10px; border-left: 1px solid rgba(114,203,207,.45); color: var(--muted); font-size: 11px; line-height: 1.45; }

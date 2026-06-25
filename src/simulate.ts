@@ -13,7 +13,7 @@ function usage(): string {
     "Options:",
     "  --games, -g <n>             Number of independent games (default: 1000)",
     "  --turns <n>                 Maximum turns per game before a draw (default: 500)",
-    "  --players <n>               Players per game, from 2 to 6 (default: 6)",
+    "  --players <n>               Players per game, from 2 to 5 (default: 5)",
     `  --strategies <names>       Comma-separated subset of: ${STRATEGIES.join(", ")}`,
     "  --seed <value>              Seed for a reproducible run (default: accord-balance)",
     "  --json                      Emit the full report as JSON",
