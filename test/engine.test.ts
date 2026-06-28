@@ -67,7 +67,7 @@ describe("world board graph", () => {
     expect(supplyCenters.every((province) => province.kind === "home" || province.kind === "neutral")).toBe(true);
     expect(FACTIONS).toHaveLength(5);
     expect(FACTIONS.every((faction) => faction.homes.length === 3)).toBe(true);
-    expect(VICTORY_SCORE).toBe(16);
+    expect(VICTORY_SCORE).toBe(10);
   });
 });
 

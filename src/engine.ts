@@ -122,7 +122,7 @@ function createMap(): Record<string, Province> {
 export const PROVINCES = createMap();
 export const LAND_PROVINCE_COUNT = provinceDefinitions.length;
 export const SEA_PROVINCE_COUNT = connectionDefinitions.filter(([, , kind]) => kind === "sea").length;
-export const VICTORY_SCORE = 16;
+export const VICTORY_SCORE = 10;
 
 export interface StoredPlayer {
   id: string;

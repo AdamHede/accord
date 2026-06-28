@@ -11,7 +11,8 @@ import {
   resolveTurn,
   scoreFor,
   type StoredPlayer,
-  type Unit
+  type Unit,
+  VICTORY_SCORE
 } from "./engine.js";
 
 /** The intentionally small set of policies used for balance simulations. */
@@ -59,6 +60,14 @@ export interface FactionStats {
   averageFinalScore: number;
 }
 
+export interface AgentProfile {
+  strategy: StrategyName;
+  boldness: number;
+  paranoia: number;
+  grudge: number;
+  rivalId: string;
+}
+
 export interface LineupStats {
   games: number;
   wins: number;
@@ -82,6 +91,7 @@ export interface SimulationReport {
 export interface SimulatedGame {
   game: Game;
   strategiesByPlayerId: Record<string, StrategyName>;
+  profilesByPlayerId: Record<string, AgentProfile>;
 }
 
 type Random = () => number;
@@ -98,6 +108,14 @@ const MOVE_PROBABILITY: Record<StrategyName, number> = {
   expansionist: 0.85,
   cautious: 0.5
 };
+
+interface SupportedAttackCandidate {
+  attacker: Unit;
+  supporter: Unit;
+  target: Unit;
+  destination: string;
+  score: number;
+}
 
 function integerOption(name: string, value: number | undefined, fallback: number, minimum: number, maximum: number): number {
   const resolved = value ?? fallback;
@@ -155,6 +173,34 @@ function shuffled<T>(items: readonly T[], random: Random): T[] {
   return result;
 }
 
+function clamp(value: number, minimum: number, maximum: number): number {
+  return Math.min(maximum, Math.max(minimum, value));
+}
+
+function trait(random: Random, minimum: number, maximum: number): number {
+  return minimum + random() * (maximum - minimum);
+}
+
+function createAgentProfiles(players: StoredPlayer[], strategiesByPlayerId: Record<string, StrategyName>, random: Random): Record<string, AgentProfile> {
+  const boldnessBase: Record<StrategyName, number> = {
+    random: 1,
+    expansionist: 1.18,
+    cautious: 0.78
+  };
+
+  return Object.fromEntries(players.map((player) => {
+    const rivals = players.filter((candidate) => candidate.id !== player.id);
+    const strategy = strategiesByPlayerId[player.id];
+    return [player.id, {
+      strategy,
+      boldness: clamp(boldnessBase[strategy] + trait(random, -0.18, 0.22), 0.55, 1.45),
+      paranoia: trait(random, 0.25, 1.25),
+      grudge: trait(random, 0.15, 1.15),
+      rivalId: choose(rivals, random).id
+    }];
+  }));
+}
+
 /** Create one fresh game with randomized factions and independently sampled strategies. */
 export function spawnSimulationGame(options: ResolvedSimulationOptions, random: Random): SimulatedGame {
   const factions = shuffled(FACTIONS, random).slice(0, options.playerCount);
@@ -187,10 +233,12 @@ export function spawnSimulationGame(options: ResolvedSimulationOptions, random: 
   };
   game.units = createInitialUnits(game);
   game.control = createInitialControl(game);
+  const strategiesByPlayerId = Object.fromEntries(players.map((player) => [player.id, choose(options.strategies, random)])) as Record<string, StrategyName>;
 
   return {
     game,
-    strategiesByPlayerId: Object.fromEntries(players.map((player) => [player.id, choose(options.strategies, random)]))
+    strategiesByPlayerId,
+    profilesByPlayerId: createAgentProfiles(players, strategiesByPlayerId, random)
   };
 }
 
@@ -212,6 +260,29 @@ function enemyUnitNeighbors(game: Game, provinceId: string, ownerId: string): nu
   return game.units.filter((unit) => unit.ownerId !== ownerId && neighboringProvinces.has(unit.provinceId)).length;
 }
 
+function fallbackProfile(game: Game, playerId: string, strategy: StrategyName): AgentProfile {
+  return {
+    strategy,
+    boldness: strategy === "expansionist" ? 1.18 : strategy === "cautious" ? 0.78 : 1,
+    paranoia: 0.5,
+    grudge: 0.5,
+    rivalId: game.players.find((player) => player.id !== playerId)?.id ?? playerId
+  };
+}
+
+function leaderId(game: Game): string | null {
+  let leader: string | null = null;
+  let leaderScore = -1;
+  for (const player of game.players) {
+    const score = scoreFor(game, player.id);
+    if (score > leaderScore) {
+      leader = player.id;
+      leaderScore = score;
+    }
+  }
+  return leader;
+}
+
 function chooseExpansionDestination(game: Game, ownerId: string, destinations: string[], random: Random): string {
   const value = (provinceId: string): number => {
     const controller = game.control[provinceId];
@@ -229,16 +300,68 @@ function chooseCautiousDestination(game: Game, ownerId: string, destinations: st
   return choose(neutral.filter((destination) => enemyUnitNeighbors(game, destination, ownerId) === lowestThreat), random);
 }
 
-function chooseMovementOrders(game: Game, playerId: string, strategy: StrategyName, random: Random): Order[] {
+function supportedAttackScore(game: Game, playerId: string, profile: AgentProfile, candidate: Omit<SupportedAttackCandidate, "score">, currentLeaderId: string | null, random: Random): number {
+  const targetOwnerScore = scoreFor(game, candidate.target.ownerId);
+  const ownScore = scoreFor(game, playerId);
+  let score = 2 + targetOwnerScore * 0.25;
+
+  if (PROVINCES[candidate.destination].supplyCenter) {
+    score += game.control[candidate.destination] === playerId ? 0.5 : 3;
+  }
+  if (candidate.target.ownerId === currentLeaderId && currentLeaderId !== playerId) score += profile.paranoia * 3;
+  if (candidate.target.ownerId === profile.rivalId) score += profile.grudge * 3;
+  if (ownScore >= VICTORY_SCORE - 2) score += 2;
+  if (profile.strategy === "cautious") score -= enemyUnitNeighbors(game, candidate.destination, playerId) * 0.5;
+  if (profile.strategy === "expansionist") score += PROVINCES[candidate.destination].supplyCenter ? 1 : 0.4;
+  return score * profile.boldness + random() * 0.75;
+}
+
+function supportedAttackCandidates(game: Game, playerId: string, profile: AgentProfile, random: Random): SupportedAttackCandidate[] {
+  const currentLeaderId = leaderId(game);
+  const ownedUnits = game.units.filter((unit) => unit.ownerId === playerId);
+  const candidates: SupportedAttackCandidate[] = [];
+
+  for (const attacker of ownedUnits) {
+    const targets = game.units.filter((unit) => unit.ownerId !== playerId && canMoveDirect(attacker, unit.provinceId));
+    for (const target of targets) {
+      const supporters = ownedUnits.filter((unit) => unit.id !== attacker.id && canMoveDirect(unit, target.provinceId));
+      for (const supporter of supporters) {
+        const candidate = { attacker, supporter, target, destination: target.provinceId };
+        candidates.push({
+          ...candidate,
+          score: supportedAttackScore(game, playerId, profile, candidate, currentLeaderId, random)
+        });
+      }
+    }
+  }
+
+  return candidates.sort((left, right) => right.score - left.score);
+}
+
+function chooseMovementOrders(game: Game, playerId: string, strategy: StrategyName, random: Random, profile = fallbackProfile(game, playerId, strategy)): Order[] {
   const reservedDestinations = new Set<string>();
+  const orderedUnitIds = new Set<string>();
   const orders: Order[] = [];
 
+  for (const attack of supportedAttackCandidates(game, playerId, profile, random)) {
+    if (orderedUnitIds.has(attack.attacker.id) || orderedUnitIds.has(attack.supporter.id) || reservedDestinations.has(attack.destination)) continue;
+    const attackChance = clamp(0.28 + profile.boldness * 0.26 + (attack.target.ownerId === profile.rivalId ? profile.grudge * 0.1 : 0), 0.22, 0.9);
+    if (attack.score < 4.5 || random() > attackChance) continue;
+    orderedUnitIds.add(attack.attacker.id);
+    orderedUnitIds.add(attack.supporter.id);
+    reservedDestinations.add(attack.destination);
+    orders.push({ unitId: attack.attacker.id, type: "move", destination: attack.destination });
+    orders.push({ unitId: attack.supporter.id, type: "support", targetUnitId: attack.attacker.id, destination: attack.destination });
+  }
+
   for (const unit of game.units.filter((candidate) => candidate.ownerId === playerId)) {
+    if (orderedUnitIds.has(unit.id)) continue;
     const destinations = availableDestinations(game, unit, reservedDestinations);
     // At the initial position, each neutral province is contested by two units.
     // Independent willingness to wait lets a single move win that opening race;
     // without it, an always-advance policy bounces forever on this compact map.
-    if (destinations.length === 0 || random() >= MOVE_PROBABILITY[strategy]) {
+    const moveProbability = clamp(MOVE_PROBABILITY[strategy] * profile.boldness, 0.25, 0.95);
+    if (destinations.length === 0 || random() >= moveProbability) {
       orders.push({ unitId: unit.id, type: "hold" });
       continue;
     }
@@ -291,10 +414,10 @@ function chooseAdjustmentOrders(game: Game, playerId: string, random: Random): O
 }
 
 /** Produce a complete, valid set of orders for one simulated player in the current phase. */
-export function chooseOrders(game: Game, playerId: string, strategy: StrategyName, random: Random): Order[] {
+export function chooseOrders(game: Game, playerId: string, strategy: StrategyName, random: Random, profile?: AgentProfile): Order[] {
   if (game.status === "retreats") return chooseRetreatOrders(game, playerId, random);
   if (game.status === "adjustments") return chooseAdjustmentOrders(game, playerId, random);
-  return chooseMovementOrders(game, playerId, strategy, random);
+  return chooseMovementOrders(game, playerId, strategy, random, profile);
 }
 
 function emptyStats(): MutableStats {
@@ -329,7 +452,7 @@ export function runSimulation(input: SimulationOptions = {}): SimulationReport {
   const startedAt = Date.now();
 
   for (let gameNumber = 0; gameNumber < options.games; gameNumber += 1) {
-    const { game, strategiesByPlayerId } = spawnSimulationGame(options, random);
+    const { game, strategiesByPlayerId, profilesByPlayerId } = spawnSimulationGame(options, random);
     const lineup = lineupKey(Object.values(strategiesByPlayerId));
     const lineupStats = lineups[lineup] ?? { games: 0, wins: 0, draws: 0 };
     lineupStats.games += 1;
@@ -338,7 +461,7 @@ export function runSimulation(input: SimulationOptions = {}): SimulationReport {
     let turns = 0;
     while (game.status !== "finished" && turns < options.maxTurns) {
       for (const player of game.players.filter((candidate) => requiredSubmitterIds(game).includes(candidate.id))) {
-        game.orders[player.id] = chooseOrders(game, player.id, strategiesByPlayerId[player.id], random);
+        game.orders[player.id] = chooseOrders(game, player.id, strategiesByPlayerId[player.id], random, profilesByPlayerId[player.id]);
       }
       resolveTurn(game, () => `simulation-event-${++eventId}`);
       turns += 1;
