@@ -4,7 +4,7 @@ Accord is a real-time, diplomacy-inspired strategy game. Players join a private 
 
 Play: https://accord-strategy.adam-hede.workers.dev
 
-The current map is a 42-land-territory world board with additional explicit sea spaces for fleet movement and convoys. Home and neutral supply centers are distinct from ordinary provinces; the first player to control 16 supply centers wins.
+The current map is a 42-land-territory world board with additional explicit sea spaces for fleet movement and convoys. Home and neutral supply centers are distinct from ordinary provinces; the first player to control 10 supply centers wins.
 
 ## Stack
 
@@ -44,7 +44,7 @@ npm run simulate # Run seeded headless balance simulations
 5. Dislodged units enter a retreat phase and must retreat or disband.
 6. Supply-center ownership updates only after Fall retreats.
 7. Winter adjustments add builds or require disbands until each player’s unit count matches their owned supply centers.
-8. A player wins by controlling 16 supply centers.
+8. A player wins by controlling 10 supply centers.
 
 ## Headless balance simulator
 
@@ -54,7 +54,7 @@ Run 1,000 seeded games against the live turn resolver:
 npm run simulate -- --seed balance-v1
 ```
 
-The report gives resolved wins and draws, then per-seat win rate and average final score for each strategy and faction. A seed makes a run reproducible. The included strategies are independently sampled for every player with replacement, so games naturally contain mixed and repeated strategies.
+The report gives resolved wins and draws, then per-seat win rate and average final score for each strategy and faction. A seed makes a run reproducible. The included strategies are independently sampled for every player with replacement, so games naturally contain mixed and repeated strategies. Each simulated player also gets a persistent profile with its own boldness, paranoia, grudge level, and rival, so bots make less uniform decisions and will sometimes coordinate supported attacks against leaders or rivals.
 
 Useful options:
 
