@@ -55,8 +55,8 @@ textarea { min-height: 78px; resize: vertical; }
 .map-header { display: flex; justify-content: space-between; align-items: start; gap: 16px; }
 .map-header h2 { margin: 5px 0 0; color: #f3efe1; font-size: clamp(26px, 3vw, 42px); }
 .map-header p { max-width: 190px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.5; text-align: right; }
-.map-scroll { margin-top: 26px; overflow-x: auto; overflow-y: hidden; border: 1px solid rgba(237,199,107,.2); border-radius: 14px; background: #102337; scrollbar-color: rgba(237,199,107,.42) transparent; }
-.map { position: relative; width: 100%; min-height: 400px; aspect-ratio: 1200 / 620; overflow: hidden; background: radial-gradient(ellipse at 50% 42%, rgba(109, 173, 166, .24), transparent 43%), linear-gradient(145deg, #245f6b, #18475d 51%, #103447); }
+.map-scroll { position: relative; margin-top: 26px; overflow: hidden; touch-action: none; overscroll-behavior: contain; border: 1px solid rgba(237,199,107,.2); border-radius: 14px; background: #102337; scrollbar-color: rgba(237,199,107,.42) transparent; }
+.map { position: relative; width: 100%; min-height: 400px; transform-origin: 0 0; will-change: transform; aspect-ratio: 1200 / 620; overflow: hidden; background: radial-gradient(ellipse at 50% 42%, rgba(109, 173, 166, .24), transparent 43%), linear-gradient(145deg, #245f6b, #18475d 51%, #103447); }
 .map::before { content: ""; position: absolute; z-index: 6; inset: 0; pointer-events: none; box-shadow: inset 0 0 90px rgba(3, 12, 24, .48); }
 .map::after { content: ""; position: absolute; z-index: 5; inset: 0; pointer-events: none; opacity: .18; background-image: radial-gradient(rgba(255,255,255,.36) .62px, transparent .8px); background-size: 13px 13px; mix-blend-mode: soft-light; }
 .world-art, .territory-layer, .route-layer { position: absolute; inset: 0; width: 100%; height: 100%; }
@@ -170,7 +170,7 @@ textarea { min-height: 78px; resize: vertical; }
 #game.spectator-mode .legend-swatch { width: 10px; height: 10px; }
 
 @media (max-width: 1320px) { .game-layout { grid-template-columns: minmax(220px, 280px) 1fr; } .right-rail { grid-column: 1 / -1; grid-template-columns: 230px 1fr; } .chat { min-height: 150px; max-height: 240px; } }
-@media (max-width: 760px) { .landing-grid, .game-layout, .right-rail { grid-template-columns: 1fr; } .landing { padding-top: 94px; } .topbar { gap: 9px; padding: 0 13px; } .room-meta { display: none; } .map-panel { min-height: 0; padding: 18px 12px; } .map { width: 920px; min-height: 475px; } .map-header p { display: none; } .right-rail { grid-column: auto; } .chat { max-height: 310px; } }
+@media (max-width: 760px) { .landing-grid, .game-layout, .right-rail { grid-template-columns: 1fr; } .landing { padding-top: 94px; } .topbar { gap: 9px; padding: 0 13px; } .room-meta { display: none; } .map-panel { min-height: 0; padding: 18px 12px; } .map-scroll { height: min(72vh, 560px); cursor: grab; } .map-scroll:active { cursor: grabbing; } .map { width: 920px; min-height: 475px; } .map-header p { display: none; } .right-rail { grid-column: auto; } .chat { max-height: 310px; } }
 
 /* Progressive map disclosure: default view is strategic, tap/zoom reveals rules detail. */
 .macro-border { stroke: rgba(14, 18, 22, .34); stroke-width: 2; }
