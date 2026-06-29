@@ -11,6 +11,7 @@ let selectedUnitId = null;
 let selectedProvinceId = null;
 let toastTimer = null;
 let screenWakeLock = null;
+const mapViewport = { scale: 1, x: 0, y: 0, pointers: new Map(), lastDistance: 0, suppressClick: false };
 
 const $ = (selector) => document.querySelector(selector);
 const landing = $("#landing");
@@ -195,7 +196,7 @@ function renderStatus() {
   const acceptingOrders = ["orders", "retreats", "adjustments"].includes(game.status);
   const copy = spectator ? "Public board display. Private negotiations and uncommitted orders remain hidden." : game.status === "lobby" ? "Choose a faction. The convener starts when every envoy is ready." : game.status === "finished" ? `${player(game.winnerId)?.name ?? "A rival"} has claimed the council.` : game.status === "retreats" ? "Dislodged units must retreat or disband before the season closes." : game.status === "adjustments" ? "Winter builds and disbands reconcile unit count with supply-center count." : "Movement, support, and convoy orders remain private until every required envoy commits.";
   $("#status").innerHTML = `<div class="eyebrow">${escapeHtml(status)}</div><div class="status-title">${acceptingOrders ? `${ready}/${playerCount} committed` : escapeHtml(status)}</div><p class="status-copy">${escapeHtml(copy)}</p>${acceptingOrders && !spectator && required.includes(session.playerId) ? `<p class="status-ready">${game.ordersSubmitted.includes(session.playerId) ? "YOUR ORDERS ARE SEALED" : "YOUR ORDERS ARE NOT YET COMMITTED"}</p>` : ""}`;
-  $("#map-hint").textContent = spectator ? (acceptingOrders ? `Live public board · ${status} · ${ready}/${playerCount} committed` : `Live public board · ${status}`) : "Named land and water provinces show legal topology. Dashed lines are secondary naval aids.";
+  $("#map-hint").textContent = spectator ? (acceptingOrders ? `Live public board · ${status} · ${ready}/${playerCount} committed` : `Live public board · ${status}`) : "Pinch or drag the board on mobile. Tap units for legal moves; dashed lanes are fleet and convoy spaces.";
 }
 
 function renderFactionPanel() {
@@ -489,6 +490,111 @@ function renderProvinceInfo(place) {
   return `<div class="map-inspector"><strong>${escapeHtml(place.kind === "sea" ? seaName(place) : place.name)}</strong><span>${escapeHtml(provinceTypeLabel(place))}</span><span>Center: ${escapeHtml(place.supplyCenter ?? "none")}</span><span>Controller: ${escapeHtml(ownerFaction?.name ?? "uncontrolled")}</span><span>Occupant: ${occupant ? escapeHtml(`${faction(occupant.faction)?.name ?? "Unknown"} ${occupant.type}`) : "none"}</span>${type !== "water" ? `<span>Army: yes · Fleet: ${fleet}</span>` : `<span>Fleet: yes · Army: no</span>`}<small>Tap units for legal moves. Long-press shows browser details.</small></div>`;
 }
 
+
+function clamp(value, min, max) { return Math.min(max, Math.max(min, value)); }
+function mapViewportElements() { return { viewport: document.querySelector(".map-scroll"), map: $("#map") }; }
+function clampMapViewport() {
+  const { viewport, map } = mapViewportElements();
+  if (!viewport || !map) return;
+  const viewportRect = viewport.getBoundingClientRect();
+  const mapWidth = map.offsetWidth * mapViewport.scale;
+  const mapHeight = map.offsetHeight * mapViewport.scale;
+  const minX = Math.min(0, viewportRect.width - mapWidth);
+  const minY = Math.min(0, viewportRect.height - mapHeight);
+  mapViewport.x = mapWidth <= viewportRect.width ? (viewportRect.width - mapWidth) / 2 : clamp(mapViewport.x, minX, 0);
+  mapViewport.y = mapHeight <= viewportRect.height ? (viewportRect.height - mapHeight) / 2 : clamp(mapViewport.y, minY, 0);
+}
+function applyMapViewport() {
+  const { map } = mapViewportElements();
+  if (!map) return;
+  clampMapViewport();
+  map.style.transform = `translate3d(${mapViewport.x}px, ${mapViewport.y}px, 0) scale(${mapViewport.scale})`;
+  map.classList.toggle("regional-zoom", mapViewport.scale > 1.35);
+}
+function zoomMapAt(clientX, clientY, nextScale) {
+  const { viewport } = mapViewportElements();
+  if (!viewport) return;
+  const rect = viewport.getBoundingClientRect();
+  const anchorX = clientX - rect.left;
+  const anchorY = clientY - rect.top;
+  const previousScale = mapViewport.scale;
+  nextScale = clamp(nextScale, 1, 3.4);
+  if (Math.abs(nextScale - previousScale) < 0.001) return;
+  const boardX = (anchorX - mapViewport.x) / previousScale;
+  const boardY = (anchorY - mapViewport.y) / previousScale;
+  mapViewport.scale = nextScale;
+  mapViewport.x = anchorX - boardX * nextScale;
+  mapViewport.y = anchorY - boardY * nextScale;
+  applyMapViewport();
+}
+function resetMapViewport() {
+  mapViewport.scale = 1;
+  mapViewport.x = 0;
+  mapViewport.y = 0;
+  applyMapViewport();
+}
+function installMapViewportInteractions() {
+  const { viewport } = mapViewportElements();
+  if (!viewport || viewport.dataset.zoomReady === "true") return;
+  viewport.dataset.zoomReady = "true";
+  viewport.addEventListener("pointerdown", (event) => {
+    if (!event.isPrimary && event.pointerType === "mouse") return;
+    viewport.setPointerCapture?.(event.pointerId);
+    mapViewport.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (mapViewport.pointers.size === 2) {
+      const points = [...mapViewport.pointers.values()];
+      mapViewport.lastDistance = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+    }
+  });
+  viewport.addEventListener("pointermove", (event) => {
+    const previous = mapViewport.pointers.get(event.pointerId);
+    if (!previous) return;
+    event.preventDefault();
+    const current = { x: event.clientX, y: event.clientY };
+    mapViewport.pointers.set(event.pointerId, current);
+    if (mapViewport.pointers.size >= 2) {
+      const points = [...mapViewport.pointers.values()].slice(0, 2);
+      const distance = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+      const midpointX = (points[0].x + points[1].x) / 2;
+      const midpointY = (points[0].y + points[1].y) / 2;
+      if (mapViewport.lastDistance) zoomMapAt(midpointX, midpointY, mapViewport.scale * (distance / mapViewport.lastDistance));
+      mapViewport.lastDistance = distance;
+      mapViewport.suppressClick = true;
+      return;
+    }
+    const dx = current.x - previous.x;
+    const dy = current.y - previous.y;
+    if (Math.hypot(dx, dy) > 2) mapViewport.suppressClick = true;
+    mapViewport.x += dx;
+    mapViewport.y += dy;
+    applyMapViewport();
+  }, { passive: false });
+  const endPointer = (event) => {
+    mapViewport.pointers.delete(event.pointerId);
+    mapViewport.lastDistance = 0;
+  };
+  viewport.addEventListener("pointerup", endPointer);
+  viewport.addEventListener("pointercancel", endPointer);
+  viewport.addEventListener("click", (event) => {
+    if (!mapViewport.suppressClick) return;
+    event.preventDefault();
+    event.stopPropagation();
+    mapViewport.suppressClick = false;
+  }, true);
+  viewport.addEventListener("wheel", (event) => {
+    if (!event.ctrlKey && Math.abs(event.deltaY) < Math.abs(event.deltaX)) return;
+    event.preventDefault();
+    zoomMapAt(event.clientX, event.clientY, mapViewport.scale * (event.deltaY > 0 ? 0.88 : 1.12));
+  }, { passive: false });
+  viewport.addEventListener("dblclick", (event) => {
+    event.preventDefault();
+    if (mapViewport.scale > 1.05) resetMapViewport();
+    else zoomMapAt(event.clientX, event.clientY, 2);
+  });
+  window.addEventListener("resize", applyMapViewport);
+  applyMapViewport();
+}
+
 function installMapInteractions(map) {
   map.querySelectorAll("[data-province]").forEach((element) => element.addEventListener("click", (event) => {
     event.stopPropagation();
@@ -503,10 +609,6 @@ function installMapInteractions(map) {
     renderMap();
   }));
   map.addEventListener("click", () => { clearMapSelection(); renderMap(); }, { once: true });
-  map.ondblclick = (event) => {
-    event.preventDefault();
-    map.classList.toggle("regional-zoom");
-  };
 }
 function placeColor(place, ownerFaction) {
   const homeFaction = faction(place.homeFactionId) ?? game.factions.find((choice) => choice.homes.includes(place.id));
@@ -598,6 +700,8 @@ function renderMap() {
   const inspector = selectedProvinceId ? renderProvinceInfo(provinceById[selectedProvinceId]) : "";
   map.innerHTML = `${worldArt()}<svg class="territory-layer" viewBox="0 0 ${BOARD_WIDTH} ${BOARD_HEIGHT}" preserveAspectRatio="none" aria-hidden="true"><defs><filter id="territory-shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="6" stdDeviation="7" flood-color="#06101a" flood-opacity=".38"/></filter><clipPath id="world-land-clip">${worldLandMarkup}</clipPath></defs><g filter="url(#territory-shadow)" clip-path="url(#world-land-clip)">${territoryLayer}</g><g class="macro-borders">${macroBorders}</g><g class="real-coastline">${worldLandMarkup}</g></svg><svg class="route-layer" viewBox="0 0 ${BOARD_WIDTH} ${BOARD_HEIGHT}" preserveAspectRatio="none" aria-hidden="true"><g class="sea-lanes">${seaRoutes.join("")}</g><g class="land-routes">${landRoutes.join("")}</g><g class="sea-spaces">${seaMarkers.join("")}</g></svg><div class="map-label-layer">${labels}${seaTokens}</div>${inspector}`;
   installMapInteractions(map);
+  installMapViewportInteractions();
+  applyMapViewport();
 }
 
 function renderScores() {
