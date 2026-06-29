@@ -11,7 +11,13 @@ let selectedUnitId = null;
 let selectedProvinceId = null;
 let toastTimer = null;
 let screenWakeLock = null;
-const mapViewport = { scale: 1, x: 0, y: 0, pointers: new Map(), lastDistance: 0, suppressClick: false };
+const mapViewport = { scale: 1, x: 0, y: 0, pointers: new Map(), lastDistance: 0, suppressClick: false, mode: "embedded" };
+let explicitMapMode = null;
+const MAP_DISPLAY_MODES = {
+  embedded: { minScale: 0.9, maxScale: 3.2, initialScale: 1 },
+  "mobile-dedicated": { minScale: 0.95, maxScale: 4, initialScale: 1.25 },
+  "spectator-1080p": { minScale: 0.86, maxScale: 2.4, initialScale: 1 }
+};
 
 const $ = (selector) => document.querySelector(selector);
 const landing = $("#landing");
@@ -110,6 +116,7 @@ function showGame() {
   gameShell.classList.toggle("spectator-mode", spectator);
   $("#room-meta").textContent = spectator ? `ROOM ${session.roomCode} · SPECTATOR DISPLAY` : `ROOM ${session.roomCode}`;
   $("#spectator-fullscreen").hidden = !spectator;
+  updateMapDisplayMode();
   if (spectator) void requestScreenWakeLock();
   else void releaseScreenWakeLock();
 }
@@ -477,13 +484,33 @@ function draftTargetIds() {
   return targets;
 }
 function clamp(value, min, max) { return Math.min(max, Math.max(min, value)); }
-function mapViewportElements() { return { viewport: document.querySelector(".map-scroll"), map: $("#map") }; }
+function mapViewportElements() { return { panel: document.querySelector(".map-panel"), viewport: document.querySelector(".map-scroll"), map: $("#map") }; }
 const MAP_ZOOM_CLASSES = ["map-zoom-world", "map-zoom-strategic", "map-zoom-regional", "map-zoom-tactical"];
-function currentMapDisplayMode(viewport = document.querySelector(".map-scroll")) {
-  if (isSpectator()) return "spectator";
+function viewportIsMobile(viewport = document.querySelector(".map-scroll")) {
   const rect = viewport?.getBoundingClientRect();
-  if (window.matchMedia?.("(max-width: 760px)").matches || (rect && rect.width < 640)) return "mobile";
+  return Boolean(window.matchMedia?.("(max-width: 760px)").matches || window.innerWidth < 760 || (rect && rect.width < 640));
+}
+function deriveMapDisplayMode(viewport = document.querySelector(".map-scroll")) {
+  if (isSpectator()) return "spectator-1080p";
+  if (explicitMapMode === "mobile-dedicated") return "mobile-dedicated";
+  if (document.fullscreenElement && viewportIsMobile(viewport)) return "mobile-dedicated";
   return "embedded";
+}
+function currentMapDisplayMode(viewport = document.querySelector(".map-scroll")) { return mapViewport.mode || deriveMapDisplayMode(viewport); }
+function updateMapDisplayMode() {
+  const { panel, viewport, map } = mapViewportElements();
+  const previousMode = mapViewport.mode;
+  const mode = deriveMapDisplayMode(viewport);
+  mapViewport.mode = mode;
+  for (const target of [panel, viewport, map, gameShell]) {
+    if (target) target.dataset.mapMode = mode;
+  }
+  const dedicated = mode === "mobile-dedicated";
+  $("#open-map").hidden = isSpectator() || !viewportIsMobile(viewport) || dedicated;
+  $("#close-map").hidden = !dedicated;
+  document.body.classList.toggle("map-dedicated-open", dedicated);
+  if (previousMode && previousMode !== mode) resetMapViewport({ preserveMode: true });
+  else applyMapViewport();
 }
 function currentMapZoomLevel(scale = mapViewport.scale, mode = currentMapDisplayMode()) {
   const { viewport } = mapViewportElements();
@@ -492,7 +519,7 @@ function currentMapZoomLevel(scale = mapViewport.scale, mode = currentMapDisplay
   const physicalHeight = rect?.height || window.innerHeight || 0;
   const physicalDiagonal = Math.hypot(physicalWidth, physicalHeight);
   const sizeBias = clamp((physicalDiagonal - 760) / 1300, -0.18, 0.18);
-  const modeBias = mode === "spectator" ? 0.22 : mode === "mobile" ? 0.14 : mode === "embedded" ? -0.06 : 0;
+  const modeBias = mode === "spectator-1080p" ? 0.22 : mode === "mobile-dedicated" ? 0.14 : mode === "embedded" ? -0.06 : 0;
   const effectiveScale = scale + sizeBias + modeBias;
   if (effectiveScale >= 2.35) return "tactical";
   if (effectiveScale >= 1.45) return "regional";
@@ -529,7 +556,8 @@ function zoomMapAt(clientX, clientY, nextScale) {
   const anchorX = clientX - rect.left;
   const anchorY = clientY - rect.top;
   const previousScale = mapViewport.scale;
-  nextScale = clamp(nextScale, 1, 3.4);
+  const limits = MAP_DISPLAY_MODES[currentMapDisplayMode()] ?? MAP_DISPLAY_MODES.embedded;
+  nextScale = clamp(nextScale, limits.minScale, limits.maxScale);
   if (Math.abs(nextScale - previousScale) < 0.001) return;
   const boardX = (anchorX - mapViewport.x) / previousScale;
   const boardY = (anchorY - mapViewport.y) / previousScale;
@@ -538,8 +566,11 @@ function zoomMapAt(clientX, clientY, nextScale) {
   mapViewport.y = anchorY - boardY * nextScale;
   applyMapViewport();
 }
-function resetMapViewport() {
-  mapViewport.scale = 1;
+function resetMapViewport({ preserveMode = false } = {}) {
+  if (!preserveMode) mapViewport.mode = deriveMapDisplayMode();
+  const mode = currentMapDisplayMode();
+  const config = MAP_DISPLAY_MODES[mode] ?? MAP_DISPLAY_MODES.embedded;
+  mapViewport.scale = config.initialScale;
   mapViewport.x = 0;
   mapViewport.y = 0;
   applyMapViewport();
@@ -602,9 +633,12 @@ function installMapViewportInteractions() {
     if (mapViewport.scale > 1.05) resetMapViewport();
     else zoomMapAt(event.clientX, event.clientY, 2);
   });
-  window.addEventListener("resize", applyMapViewport);
-  applyMapViewport();
+  window.addEventListener("resize", updateMapDisplayMode);
+  updateMapDisplayMode();
 }
+
+function openDedicatedMap() { explicitMapMode = "mobile-dedicated"; updateMapDisplayMode(); resetMapViewport({ preserveMode: true }); }
+function closeDedicatedMap() { explicitMapMode = null; updateMapDisplayMode(); resetMapViewport({ preserveMode: true }); }
 
 function installMapInteractions(map) {
   map.querySelectorAll("[data-province]").forEach((element) => element.addEventListener("click", (event) => {
@@ -801,7 +835,7 @@ function renderMap() {
   ].join("");
   installMapInteractions(map);
   installMapViewportInteractions();
-  applyMapViewport();
+  updateMapDisplayMode();
 }
 
 function renderScores() {
@@ -839,12 +873,14 @@ $("#join-form").addEventListener("submit", async (event) => {
 });
 $("#chat-form").addEventListener("submit", (event) => { event.preventDefault(); const input = $("#chat-input"); if (!input.value.trim()) return; send({ type: "chat", body: input.value, recipientId: $("#chat-recipient").value || null }); input.value = ""; });
 $("#copy-room").addEventListener("click", async () => { try { await navigator.clipboard.writeText(`${location.origin}/?room=${session.roomCode}`); notify("Invite link copied."); } catch { notify(`Room code: ${session.roomCode}`); } });
+$("#open-map").addEventListener("click", openDedicatedMap);
+$("#close-map").addEventListener("click", closeDedicatedMap);
 $("#spectator-fullscreen").addEventListener("click", () => { void toggleFullscreen(); });
 $("#leave-room").addEventListener("click", () => { socket?.close(); void releaseScreenWakeLock(); localStorage.removeItem(sessionKey); session = null; game = null; location.href = "/"; });
 
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") void requestScreenWakeLock(); });
 window.addEventListener("pagehide", () => { void releaseScreenWakeLock(); });
-document.addEventListener("fullscreenchange", () => { $("#spectator-fullscreen").textContent = document.fullscreenElement ? "Exit fullscreen" : "Fullscreen"; });
+document.addEventListener("fullscreenchange", () => { $("#spectator-fullscreen").textContent = document.fullscreenElement ? "Exit fullscreen" : "Fullscreen"; updateMapDisplayMode(); });
 
 const inviteRoomCode = new URLSearchParams(location.search).get("room")?.toUpperCase().replace(/[^A-Z0-9]/g, "");
 if (inviteRoomCode) $("#join-code").value = inviteRoomCode.slice(0, 6);
