@@ -11,12 +11,12 @@ let selectedUnitId = null;
 let selectedProvinceId = null;
 let toastTimer = null;
 let screenWakeLock = null;
-const mapViewport = { scale: 1, x: 0, y: 0, pointers: new Map(), lastDistance: 0, suppressClick: false, mode: "embedded" };
+const mapViewport = { scale: 1, x: 0, y: 0, pointers: new Map(), lastDistance: 0, suppressClick: false, mode: "embedded", cameraReady: false, cameraPreset: "fitWorld", insets: { top: 0, right: 0, bottom: 0, left: 0 } };
 let explicitMapMode = null;
 const MAP_DISPLAY_MODES = {
   embedded: { minScale: 0.9, maxScale: 3.2, initialScale: 1 },
   "mobile-dedicated": { minScale: 0.95, maxScale: 4, initialScale: 1.25 },
-  "spectator-1080p": { minScale: 0.86, maxScale: 2.4, initialScale: 1 }
+  "spectator-1080p": { minScale: 0.68, maxScale: 2.4, initialScale: 1 }
 };
 
 const $ = (selector) => document.querySelector(selector);
@@ -509,7 +509,7 @@ function updateMapDisplayMode() {
   $("#open-map").hidden = isSpectator() || !viewportIsMobile(viewport) || dedicated;
   $("#close-map").hidden = !dedicated;
   document.body.classList.toggle("map-dedicated-open", dedicated);
-  if (previousMode && previousMode !== mode) resetMapViewport({ preserveMode: true });
+  if (previousMode && previousMode !== mode) setMapCamera(defaultMapCameraPreset(), { preserveMode: true });
   else applyMapViewport();
 }
 function currentMapZoomLevel(scale = mapViewport.scale, mode = currentMapDisplayMode()) {
@@ -532,10 +532,15 @@ function clampMapViewport() {
   const viewportRect = viewport.getBoundingClientRect();
   const mapWidth = map.offsetWidth * mapViewport.scale;
   const mapHeight = map.offsetHeight * mapViewport.scale;
-  const minX = Math.min(0, viewportRect.width - mapWidth);
-  const minY = Math.min(0, viewportRect.height - mapHeight);
-  mapViewport.x = mapWidth <= viewportRect.width ? (viewportRect.width - mapWidth) / 2 : clamp(mapViewport.x, minX, 0);
-  mapViewport.y = mapHeight <= viewportRect.height ? (viewportRect.height - mapHeight) / 2 : clamp(mapViewport.y, minY, 0);
+  const insets = mapViewport.insets ?? { top: 0, right: 0, bottom: 0, left: 0 };
+  const availableWidth = Math.max(1, viewportRect.width - insets.left - insets.right);
+  const availableHeight = Math.max(1, viewportRect.height - insets.top - insets.bottom);
+  const minX = Math.min(insets.left, insets.left + availableWidth - mapWidth);
+  const maxX = insets.left;
+  const minY = Math.min(insets.top, insets.top + availableHeight - mapHeight);
+  const maxY = insets.top;
+  mapViewport.x = mapWidth <= availableWidth ? insets.left + (availableWidth - mapWidth) / 2 : clamp(mapViewport.x, minX, maxX);
+  mapViewport.y = mapHeight <= availableHeight ? insets.top + (availableHeight - mapHeight) / 2 : clamp(mapViewport.y, minY, maxY);
 }
 function applyMapViewport() {
   const { viewport, map } = mapViewportElements();
@@ -566,15 +571,85 @@ function zoomMapAt(clientX, clientY, nextScale) {
   mapViewport.y = anchorY - boardY * nextScale;
   applyMapViewport();
 }
-function resetMapViewport({ preserveMode = false } = {}) {
-  if (!preserveMode) mapViewport.mode = deriveMapDisplayMode();
-  const mode = currentMapDisplayMode();
-  const config = MAP_DISPLAY_MODES[mode] ?? MAP_DISPLAY_MODES.embedded;
-  mapViewport.scale = config.initialScale;
-  mapViewport.x = 0;
-  mapViewport.y = 0;
+const MAP_CAMERA_PRESETS = {
+  fitWorld: { box: { left: 0, top: 0, right: BOARD_WIDTH, bottom: BOARD_HEIGHT }, padding: 18 },
+  fitEuropeAfrica: { box: { left: 455, top: 35, right: 845, bottom: 540 }, padding: 34 },
+  fitAsiaPacific: { box: { left: 720, top: 45, right: 1160, bottom: 590 }, padding: 34 },
+  fitAmericas: { box: { left: 25, top: 35, right: 465, bottom: 595 }, padding: 34 }
+};
+function boxAroundPoints(points, padding = 54) {
+  if (!points.length) return null;
+  const xs = points.map((point) => point.x);
+  const ys = points.map((point) => point.y);
+  return {
+    left: clamp(Math.min(...xs) - padding, 0, BOARD_WIDTH),
+    top: clamp(Math.min(...ys) - padding, 0, BOARD_HEIGHT),
+    right: clamp(Math.max(...xs) + padding, 0, BOARD_WIDTH),
+    bottom: clamp(Math.max(...ys) + padding, 0, BOARD_HEIGHT)
+  };
+}
+function provinceCameraBox(provinceId, padding = 90) {
+  const place = province(provinceId);
+  return place ? boxAroundPoints([boardPoint(place)], padding) : null;
+}
+function selectedProvinceCameraBox() { return provinceCameraBox(selectedProvinceId, 115); }
+function selectedUnitCameraBox() { return provinceCameraBox(activeUnits().find((unit) => unit.id === selectedUnitId)?.provinceId, 115); }
+function homeRegionCameraBox() {
+  const mine = ownPlayer();
+  const homeIds = faction(mine?.faction)?.homes ?? [];
+  return boxAroundPoints(homeIds.map((id) => province(id)).filter(Boolean).map(boardPoint), 120);
+}
+function cameraBoxForPreset(preset) {
+  if (preset === "selectedProvince") return selectedProvinceCameraBox() ?? MAP_CAMERA_PRESETS.fitWorld.box;
+  if (preset === "selectedUnit") return selectedUnitCameraBox() ?? selectedProvinceCameraBox() ?? MAP_CAMERA_PRESETS.fitWorld.box;
+  if (preset === "homeRegion") return homeRegionCameraBox() ?? MAP_CAMERA_PRESETS.fitWorld.box;
+  return (MAP_CAMERA_PRESETS[preset] ?? MAP_CAMERA_PRESETS.fitWorld).box;
+}
+function mapCameraInsets(mode, options = {}) {
+  const base = options.padding ?? MAP_CAMERA_PRESETS[options.preset]?.padding ?? 24;
+  if (mode === "spectator-1080p") return { top: 128, right: 28, bottom: 72, left: 28 };
+  if (mode === "mobile-dedicated") return { top: 82, right: 14, bottom: 86, left: 14 };
+  return { top: base, right: base, bottom: base, left: base };
+}
+function setMapCamera(preset = "fitWorld", options = {}) {
+  const { viewport, map } = mapViewportElements();
+  if (!viewport || !map) return;
+  if (!options.preserveMode) mapViewport.mode = deriveMapDisplayMode(viewport);
+  const mode = currentMapDisplayMode(viewport);
+  const box = cameraBoxForPreset(preset);
+  const insets = { ...mapCameraInsets(mode, { ...options, preset }), ...(options.insets ?? {}) };
+  mapViewport.insets = insets;
+  const viewportRect = viewport.getBoundingClientRect();
+  const mapWidth = map.offsetWidth || BOARD_WIDTH;
+  const mapHeight = map.offsetHeight || BOARD_HEIGHT;
+  const boxLeft = box.left / BOARD_WIDTH * mapWidth;
+  const boxTop = box.top / BOARD_HEIGHT * mapHeight;
+  const boxWidth = Math.max(1, (box.right - box.left) / BOARD_WIDTH * mapWidth);
+  const boxHeight = Math.max(1, (box.bottom - box.top) / BOARD_HEIGHT * mapHeight);
+  const availableWidth = Math.max(1, viewportRect.width - insets.left - insets.right);
+  const availableHeight = Math.max(1, viewportRect.height - insets.top - insets.bottom);
+  const limits = MAP_DISPLAY_MODES[mode] ?? MAP_DISPLAY_MODES.embedded;
+  const fitScale = Math.min(availableWidth / boxWidth, availableHeight / boxHeight);
+  mapViewport.scale = clamp(fitScale, limits.minScale, limits.maxScale);
+  mapViewport.x = insets.left + (availableWidth - boxWidth * mapViewport.scale) / 2 - boxLeft * mapViewport.scale;
+  mapViewport.y = insets.top + (availableHeight - boxHeight * mapViewport.scale) / 2 - boxTop * mapViewport.scale;
+  mapViewport.cameraReady = true;
+  mapViewport.cameraPreset = preset;
   applyMapViewport();
 }
+function defaultMapCameraPreset() {
+  if (isSpectator()) return "fitWorld";
+  if (viewportIsMobile() && homeRegionCameraBox()) return "homeRegion";
+  return "fitWorld";
+}
+function installCameraControls() {
+  document.querySelectorAll("[data-camera-preset]").forEach((button) => {
+    if (button.dataset.cameraReady === "true") return;
+    button.dataset.cameraReady = "true";
+    button.addEventListener("click", () => setMapCamera(button.dataset.cameraPreset));
+  });
+}
+
 function installMapViewportInteractions() {
   const { viewport } = mapViewportElements();
   if (!viewport || viewport.dataset.zoomReady === "true") return;
@@ -630,15 +705,16 @@ function installMapViewportInteractions() {
   }, { passive: false });
   viewport.addEventListener("dblclick", (event) => {
     event.preventDefault();
-    if (mapViewport.scale > 1.05) resetMapViewport();
+    if (mapViewport.scale > 1.05) setMapCamera(defaultMapCameraPreset());
     else zoomMapAt(event.clientX, event.clientY, 2);
   });
   window.addEventListener("resize", updateMapDisplayMode);
   updateMapDisplayMode();
+  if (!mapViewport.cameraReady) setMapCamera(defaultMapCameraPreset(), { preserveMode: true });
 }
 
-function openDedicatedMap() { explicitMapMode = "mobile-dedicated"; updateMapDisplayMode(); resetMapViewport({ preserveMode: true }); }
-function closeDedicatedMap() { explicitMapMode = null; updateMapDisplayMode(); resetMapViewport({ preserveMode: true }); }
+function openDedicatedMap() { explicitMapMode = "mobile-dedicated"; updateMapDisplayMode(); setMapCamera(defaultMapCameraPreset(), { preserveMode: true }); }
+function closeDedicatedMap() { explicitMapMode = null; updateMapDisplayMode(); setMapCamera(defaultMapCameraPreset(), { preserveMode: true }); }
 
 function installMapInteractions(map) {
   map.querySelectorAll("[data-province]").forEach((element) => element.addEventListener("click", (event) => {
@@ -834,8 +910,10 @@ function renderMap() {
     renderInspectorLayer(model)
   ].join("");
   installMapInteractions(map);
+  installCameraControls();
   installMapViewportInteractions();
   updateMapDisplayMode();
+  if (!mapViewport.cameraReady) setMapCamera(defaultMapCameraPreset(), { preserveMode: true });
 }
 
 function renderScores() {
