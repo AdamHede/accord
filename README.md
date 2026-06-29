@@ -46,6 +46,32 @@ npm run simulate # Run seeded headless balance simulations
 7. Winter adjustments add builds or require disbands until each player’s unit count matches their owned supply centers.
 8. A player wins by controlling 10 supply centers.
 
+
+## Agentic AI envoys
+
+Hosts can add an AI envoy from the lobby. AI envoys are normal factions for adjudication, but the Durable Object drives them in the background with the OpenAI Responses API:
+
+- AI model tier is controlled with `ACCORD_AI_TIER`: `high` uses `gpt-5.5` with medium reasoning for everything, `balanced` uses `gpt-5.4-mini` low reasoning for negotiation and `gpt-5.5` medium reasoning for final turn planning, and `test` uses `gpt-5.4-mini` low reasoning for everything.
+- Deterministic simulator tests can still use `forceDeterministic: true` to avoid API calls entirely.
+- The AI only sees public board state, visible public/private chat, its own state, and persisted memories. It does not see hidden human orders.
+- The AI can schedule itself with Durable Object alarms so it waits for humans instead of spamming chat. During tests, use `forceDeterministic: true` so no sleeping or API key is required.
+- After resolution it updates memory for trust, betrayals, alliances, and short/long-term goals.
+
+Configure the OpenAI key as a Cloudflare secret before deployment:
+
+```sh
+npx wrangler secret put OPENAI_API_KEY
+```
+
+For local development, create a non-committed `.dev.vars` file with:
+
+```dotenv
+OPENAI_API_KEY=sk-...
+ACCORD_AI_TIER=balanced
+```
+
+In GitHub Actions, store the same value as a repository secret named `OPENAI_API_KEY` and set `ACCORD_AI_TIER` to `high`, `balanced`, or `test` for the deployment environment.
+
 ## Headless balance simulator
 
 Run 1,000 seeded games against the live turn resolver:

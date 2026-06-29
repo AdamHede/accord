@@ -205,9 +205,10 @@ function renderFactionPanel() {
     return `<button class="faction ${chosen ? "chosen" : ""}" style="--faction:${choice.color}" data-faction="${choice.id}" ${owner && !chosen ? "disabled" : ""}><strong>${escapeHtml(choice.name.replace(/ .*/, ""))}</strong><small>${owner ? (chosen ? "your banner" : `${escapeHtml(owner.name)} holds it`) : "available"}</small></button>`;
   }).join("");
   const currentEnvoys = envoys();
-  const start = session.playerId === game.hostPlayerId ? `<button class="commit" id="start-game" ${currentEnvoys.length < 2 || currentEnvoys.some((candidate) => !candidate.faction) ? "disabled" : ""}>Begin council <span>→</span></button>` : `<p class="status-copy">Waiting for the convener to begin.</p>`;
-  panel.innerHTML = `<h3>Choose your banner</h3><div class="faction-grid">${choices}</div>${start}`;
+  const hostControls = session.playerId === game.hostPlayerId ? `<button class="commit" id="add-ai" ${currentEnvoys.length >= game.factions.length ? "disabled" : ""}>Add AI envoy</button><button class="commit" id="start-game" ${currentEnvoys.length < 2 || currentEnvoys.some((candidate) => !candidate.faction) ? "disabled" : ""}>Begin council <span>→</span></button>` : `<p class="status-copy">Waiting for the convener to begin.</p>`;
+  panel.innerHTML = `<h3>Choose your banner</h3><div class="faction-grid">${choices}</div>${hostControls}`;
   panel.querySelectorAll("[data-faction]").forEach((button) => button.addEventListener("click", () => send({ type: "faction", factionId: button.dataset.faction })));
+  $("#add-ai")?.addEventListener("click", () => send({ type: "addAi" }));
   $("#start-game")?.addEventListener("click", () => send({ type: "start" }));
 }
 
