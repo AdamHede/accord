@@ -131,6 +131,7 @@ export interface StoredPlayer {
   role: PlayerRole;
   faction: FactionId | null;
   joinedAt: number;
+  ai?: boolean;
 }
 
 export interface PublicPlayer {
@@ -139,6 +140,7 @@ export interface PublicPlayer {
   role: PlayerRole;
   faction: FactionId | null;
   joinedAt: number;
+  ai?: boolean;
 }
 
 export interface Unit {

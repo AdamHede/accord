@@ -15,6 +15,7 @@ import {
   StoredPlayer,
   validateOrders
 } from "./engine";
+import { addAiEnvoy, aiEnvoys, humanEnvoys, isAiPlayer, planAiTurn, resolveAiTier, type AiMemory } from "./ai";
 
 interface Session {
   roomCode: string;
@@ -27,6 +28,10 @@ interface SocketSession {
   token: string;
 }
 
+interface AiStorage {
+  memories: Record<string, AiMemory>;
+}
+
 interface RoomResponse extends Session {
   state: ReturnType<typeof publicView>;
 }
@@ -37,6 +42,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isSocketSession(value: unknown): value is SocketSession {
   return isRecord(value) && typeof value.playerId === "string" && typeof value.token === "string";
+}
+
+function visibleAiMention(game: Game, aiPlayerId: string): boolean {
+  const latest = game.chats.at(-1);
+  return !!latest && latest.authorId !== aiPlayerId && (latest.recipientId === aiPlayerId || latest.recipientId === null);
 }
 
 async function secureEquals(left: string, right: string): Promise<boolean> {
@@ -91,6 +101,18 @@ export class GameRoom extends DurableObject<Env> {
     const player = game.players.find((candidate) => candidate.id === playerId);
     if (!player || !(await secureEquals(player.token, token))) throw new Error("Your private game session is not valid.");
     return player;
+  }
+
+  private async readAiStorage(): Promise<AiStorage> {
+    return (await this.ctx.storage.get<AiStorage>("ai")) ?? { memories: {} };
+  }
+
+  private async writeAiStorage(ai: AiStorage): Promise<void> {
+    await this.ctx.storage.put("ai", ai);
+  }
+
+  private async scheduleAi(delayMs = 0): Promise<void> {
+    await this.ctx.storage.setAlarm(Date.now() + Math.max(0, delayMs));
   }
 
   private async responseFor(game: Game, player: StoredPlayer): Promise<RoomResponse> {
@@ -151,6 +173,12 @@ export class GameRoom extends DurableObject<Env> {
     return publicView(game, playerId);
   }
 
+  private async addAi(game: Game, player: StoredPlayer): Promise<void> {
+    if (!isEnvoy(player) || player.id !== game.hostPlayerId) throw new Error("Only the convener can add AI envoys.");
+    addAiEnvoy(game);
+    await this.scheduleAi(0);
+  }
+
   private async chooseFaction(game: Game, player: StoredPlayer, factionId: unknown): Promise<void> {
     if (!isEnvoy(player)) throw new Error("Spectators cannot choose a faction.");
     if (game.status !== "lobby") throw new Error("Factions are locked once the council begins.");
@@ -188,7 +216,12 @@ export class GameRoom extends DurableObject<Env> {
     const phase = game.status === "orders" ? "orders" : game.status === "retreats" ? "retreats" : "adjustments";
     game.activity.unshift({ id: crypto.randomUUID(), text: `${player.name} has committed ${phase}.`, createdAt: Date.now() });
     game.activity = game.activity.slice(0, 8);
-    if (requiredSubmitterIds(game).every((playerId) => game.orders[playerId])) resolveTurn(game, () => crypto.randomUUID());
+    if (requiredSubmitterIds(game).every((playerId) => game.orders[playerId])) {
+      resolveTurn(game, () => crypto.randomUUID());
+      await this.scheduleAi(0);
+    } else if (humanEnvoys(game).every((candidate) => !requiredSubmitterIds(game).includes(candidate.id) || game.orders[candidate.id])) {
+      await this.scheduleAi(0);
+    }
   }
 
   private async sendChat(game: Game, player: StoredPlayer, body: unknown, recipientId: unknown): Promise<void> {
@@ -198,6 +231,7 @@ export class GameRoom extends DurableObject<Env> {
     const recipient = typeof recipientId === "string" ? recipientId : null;
     if (recipient && !game.players.some((candidate) => candidate.id === recipient && isEnvoy(candidate))) throw new Error("Unknown recipient.");
     game.chats.push({ id: crypto.randomUUID(), authorId: player.id, authorName: player.name, recipientId: recipient, body: message, createdAt: Date.now() });
+    if (!isAiPlayer(player) && (!recipient || aiEnvoys(game).some((ai) => ai.id === recipient))) await this.scheduleAi(20_000);
     game.chats = game.chats.slice(-80);
   }
 
@@ -218,6 +252,35 @@ export class GameRoom extends DurableObject<Env> {
 
   private sendError(socket: WebSocket, message: string): void {
     socket.send(JSON.stringify({ type: "error", message }));
+  }
+
+  async alarm(): Promise<void> {
+    const game = await this.readGame();
+    if (!game) return;
+    const ai = await this.readAiStorage();
+    let nextSleep: number | null = null;
+    for (const aiPlayer of aiEnvoys(game)) {
+      const humansDone = humanEnvoys(game).every((candidate) => !requiredSubmitterIds(game).includes(candidate.id) || game.orders[candidate.id]);
+      if (!humansDone && !visibleAiMention(game, aiPlayer.id)) continue;
+      const env = this.env as Env & { OPENAI_API_KEY?: string; ACCORD_AI_TIER?: string };
+      const plan = await planAiTurn(game, aiPlayer, ai.memories[aiPlayer.id] ?? null, { apiKey: env.OPENAI_API_KEY, tier: resolveAiTier(env.ACCORD_AI_TIER), finalPlanning: humansDone });
+      for (const message of plan.chatMessages) {
+        const recipient = message.recipientId && game.players.some((player) => player.id === message.recipientId && isEnvoy(player)) ? message.recipientId : null;
+        game.chats.push({ id: crypto.randomUUID(), authorId: aiPlayer.id, authorName: aiPlayer.name, recipientId: recipient, body: normalizeMessage(message.body) ?? "Agreed. I will consider it.", createdAt: Date.now() });
+      }
+      game.chats = game.chats.slice(-80);
+      ai.memories[aiPlayer.id] = { ...plan.memory, playerId: aiPlayer.id, updatedAt: Date.now(), turn: game.turn };
+      if (humansDone && requiredSubmitterIds(game).includes(aiPlayer.id) && !game.orders[aiPlayer.id]) game.orders[aiPlayer.id] = validateOrders(game, aiPlayer.id, plan.orders);
+      if (plan.sleepMs > 0) nextSleep = nextSleep === null ? plan.sleepMs : Math.min(nextSleep, plan.sleepMs);
+    }
+    if (requiredSubmitterIds(game).length > 0 && requiredSubmitterIds(game).every((playerId) => game.orders[playerId])) {
+      resolveTurn(game, () => crypto.randomUUID());
+      nextSleep = 0;
+    }
+    await this.writeAiStorage(ai);
+    await this.writeGame(game);
+    this.broadcast(game);
+    if (nextSleep !== null) await this.scheduleAi(nextSleep);
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -264,9 +327,10 @@ export class GameRoom extends DurableObject<Env> {
       if (!game) throw new Error("That council does not exist.");
       const player = await this.authorize(game, session.playerId, session.token);
       if (data.type === "faction") await this.chooseFaction(game, player, data.factionId);
-      else if (data.type === "start") await this.startGame(game, player);
+      else if (data.type === "start") { await this.startGame(game, player); await this.scheduleAi(0); }
       else if (data.type === "orders") await this.submitOrders(game, player, data.orders);
       else if (data.type === "chat") await this.sendChat(game, player, data.body, data.recipientId);
+      else if (data.type === "addAi") await this.addAi(game, player);
       else throw new Error("Unknown action.");
       await this.writeGame(game);
       this.broadcast(game);
