@@ -7,6 +7,8 @@ let game = null;
 let socket = null;
 let drafts = {};
 let activeTurn = null;
+let selectedUnitId = null;
+let selectedProvinceId = null;
 let toastTimer = null;
 let screenWakeLock = null;
 
@@ -135,6 +137,8 @@ async function toggleFullscreen() {
   } catch { notify("Fullscreen is not available in this browser."); }
 }
 
+function clearMapSelection() { selectedUnitId = null; selectedProvinceId = null; }
+
 function resetDrafts() {
   if (game.status === "adjustments") {
     const need = game.adjustmentNeeds?.[session.playerId] ?? 0;
@@ -166,7 +170,7 @@ function openSocket() {
     if (message.type === "state") {
       const turnChanged = game && (game.turn !== message.payload.turn || game.status !== message.payload.status || game.season !== message.payload.season);
       game = message.payload;
-      if (activeTurn === null || turnChanged) { activeTurn = game.turn; resetDrafts(); }
+      if (activeTurn === null || turnChanged) { activeTurn = game.turn; clearMapSelection(); resetDrafts(); }
       render();
     }
   });
@@ -437,16 +441,34 @@ function provinceTypeLabel(place, provinceById = null) {
   const type = provinceType(place, provinceById);
   return type === "water" ? "water province" : `${type} land province`;
 }
+const defaultLandLabels = {
+  awc: "Alaska", ena: "E. N. America", yuc: "Yucatán", car: "Carib.", pat: "Patagonia", bri: "Britain", weu: "W. Europe", ceu: "C. Europe", sca: "Scand.", eeu: "E. Europe", lib: "Libya", egy: "Egypt", ara: "Arabia", per: "Persia", eaf: "E. Africa", cap: "Cape", cas: "C. Asia", ste: "Steppe", jak: "Japan/Korea", sea: "S.E. Asia", mal: "Malacca", png: "New Guinea"
+};
+
+const seaLabels = {
+  water_awc_sib: "Bering Sea", water_car_ena: "W. Atlantic", water_car_pan: "Caribbean Sea", water_bra_car: "S. Atlantic", water_bri_sca: "North Sea", water_bri_weu: "Channel", water_ibe_mag: "W. Med.", water_mag_egy: "E. Med.", water_ara_eaf: "Red Sea", water_cap_aus: "Indian Ocean", water_ind_mal: "Andaman Sea", water_mal_sea: "Malacca Strait", water_aus_mal: "Timor Sea", water_mal_png: "Banda Sea", water_aus_png: "Coral Sea", water_man_jak: "E. China Sea", water_jak_sib: "N. Pacific"
+};
+
+function labelName(place) {
+  return defaultLandLabels[place.id] ?? place.name;
+}
+
 function seaName(place) {
-  return place.name.replace(/ Sea Route$/, " Sea").replace(/–/g, "–");
+  return seaLabels[place.id] ?? place.name.replace(/ Sea Route$/, " Sea").replace(/–/g, "–");
 }
 function seaRouteEndpoints(place) {
   if (place.kind !== "sea" || !place.id.startsWith("water_")) return null;
   const parts = place.id.replace(/^water_/, "").split("_");
   return parts.length === 2 ? parts : null;
 }
+function selectedLegalTargetIds() {
+  const unit = activeUnits().find((candidate) => candidate.id === selectedUnitId);
+  if (!unit) return new Set();
+  return new Set(game.map.filter((place) => canMoveDirect(unit, place.id) || (unit.type === "army" && hasPotentialConvoyRoute(unit, place.id))).map((place) => place.id));
+}
+
 function draftTargetIds() {
-  const targets = new Set();
+  const targets = selectedLegalTargetIds();
   for (const order of draftOrders()) {
     if ((order.type === "move" || order.type === "retreat") && order.destination) targets.add(order.destination);
     if (order.type === "build" && order.provinceId) targets.add(order.provinceId);
@@ -454,7 +476,37 @@ function draftTargetIds() {
   return targets;
 }
 function placeTitle(place, ownerFaction) {
-  return `${place.kind === "sea" ? seaName(place) : place.name} · ${provinceTypeLabel(place)}${place.supplyCenter ? ` · ${place.supplyCenter} supply center` : " · non-center"}${ownerFaction ? ` — controlled by ${ownerFaction.name}` : ""}`;
+  const occupant = game?.units.find((unit) => unit.provinceId === place.id);
+  return `${place.kind === "sea" ? seaName(place) : place.name} · ${provinceTypeLabel(place)}${place.supplyCenter ? ` · ${place.supplyCenter} supply center` : " · non-center"}${ownerFaction ? ` — controlled by ${ownerFaction.name}` : ""}${occupant ? ` · occupied by ${faction(occupant.faction)?.name ?? "unknown"} ${occupant.type}` : ""}`;
+}
+
+function renderProvinceInfo(place) {
+  const owner = player(game.control[place.id]);
+  const ownerFaction = faction(owner?.faction);
+  const occupant = game.units.find((unit) => unit.provinceId === place.id);
+  const type = provinceType(place);
+  const fleet = placeCanHostFleet(place) ? "yes" : "no";
+  return `<div class="map-inspector"><strong>${escapeHtml(place.kind === "sea" ? seaName(place) : place.name)}</strong><span>${escapeHtml(provinceTypeLabel(place))}</span><span>Center: ${escapeHtml(place.supplyCenter ?? "none")}</span><span>Controller: ${escapeHtml(ownerFaction?.name ?? "uncontrolled")}</span><span>Occupant: ${occupant ? escapeHtml(`${faction(occupant.faction)?.name ?? "Unknown"} ${occupant.type}`) : "none"}</span>${type !== "water" ? `<span>Army: yes · Fleet: ${fleet}</span>` : `<span>Fleet: yes · Army: no</span>`}<small>Tap units for legal moves. Long-press shows browser details.</small></div>`;
+}
+
+function installMapInteractions(map) {
+  map.querySelectorAll("[data-province]").forEach((element) => element.addEventListener("click", (event) => {
+    event.stopPropagation();
+    selectedProvinceId = element.dataset.province;
+    selectedUnitId = null;
+    renderMap();
+  }));
+  map.querySelectorAll("[data-unit]").forEach((element) => element.addEventListener("click", (event) => {
+    event.stopPropagation();
+    selectedUnitId = element.dataset.unit;
+    selectedProvinceId = province(activeUnits().find((unit) => unit.id === selectedUnitId)?.provinceId)?.id ?? null;
+    renderMap();
+  }));
+  map.addEventListener("click", () => { clearMapSelection(); renderMap(); }, { once: true });
+  map.ondblclick = (event) => {
+    event.preventDefault();
+    map.classList.toggle("regional-zoom");
+  };
 }
 function placeColor(place, ownerFaction) {
   const homeFaction = faction(place.homeFactionId) ?? game.factions.find((choice) => choice.homes.includes(place.id));
@@ -464,7 +516,7 @@ function renderUnitTokens(place, pending) {
   return game.units.filter((unit) => unit.provinceId === place.id).map((unit) => {
     const color = faction(unit.faction)?.color ?? "#aab3c2";
     const title = `${player(unit.ownerId)?.name ?? "Unknown"} ${unit.type}${pending.has(unit.id) ? " (dislodged)" : ""}`;
-    return `<i class="unit-token unit-${unit.type} ${pending.has(unit.id) ? "retreating" : ""}" style="--unit-color:${color}" title="${escapeHtml(title)}">${unit.type === "fleet" ? "F" : "A"}</i>`;
+    return `<i class="unit-token unit-${unit.type} ${pending.has(unit.id) ? "retreating" : ""} ${selectedUnitId === unit.id ? "selected-unit" : ""}" data-unit="${unit.id}" style="--unit-color:${color}" title="${escapeHtml(title)}">${unit.type === "fleet" ? "F" : "A"}</i>`;
   }).join("");
 }
 
@@ -486,6 +538,7 @@ function renderMap() {
   const provinceById = Object.fromEntries(game.map.map((place) => [place.id, place]));
   const territories = territoryPaths(provinceById);
   const targets = draftTargetIds();
+  const legalTargets = selectedLegalTargetIds();
   const pending = pendingUnitIds();
   const territoryLayer = game.map.filter((place) => place.kind !== "sea").map((place) => {
     const ownerFaction = faction(player(game.control[place.id])?.faction);
@@ -495,8 +548,10 @@ function renderMap() {
     if (color) classes.push("has-color");
     if (ownerFaction) classes.push("controlled");
     if (targets.has(place.id)) classes.push("selected-destination");
+    if (selectedProvinceId === place.id) classes.push("selected-province");
+    if (selectedUnitId && !legalTargets.has(place.id)) classes.push("selection-muted");
     const style = color ? ` style="--province-color:${color}"` : "";
-    return `<path class="${classes.join(" ")}"${style} d="${territories.get(place.id) ?? fallbackTerritoryPath(place)}"><title>${escapeHtml(placeTitle(place, ownerFaction))}</title></path>`;
+    return `<path class="${classes.join(" ")}" data-province="${place.id}"${style} d="${territories.get(place.id) ?? fallbackTerritoryPath(place)}"><title>${escapeHtml(placeTitle(place, ownerFaction))}</title></path>`;
   }).join("");
 
   const landRoutes = [];
@@ -518,8 +573,8 @@ function renderMap() {
     if (!a || !b) continue;
     const point = boardPoint(place);
     const selected = targets.has(place.id);
-    seaRoutes.push(`<path class="route route-sea-lane ${selected ? "selected-destination" : ""}" d="${seaLanePath(place, a, b)}"><title>${escapeHtml(placeTitle(place))}</title></path>`);
-    seaMarkers.push(`<g class="sea-space ${selected ? "selected-destination" : ""}" transform="translate(${point.x.toFixed(1)} ${point.y.toFixed(1)})"><title>${escapeHtml(placeTitle(place))}</title><circle class="sea-space-halo" r="18"/><circle class="sea-space-ring" r="7"/></g>`);
+    seaRoutes.push(`<path class="route route-sea-lane ${selected ? "selected-destination" : ""} ${selectedUnitId ? "planning-route" : ""}" d="${seaLanePath(place, a, b)}"><title>${escapeHtml(placeTitle(place))}</title></path>`);
+    seaMarkers.push(`<g class="sea-space ${selected ? "selected-destination" : ""} ${selectedProvinceId === place.id ? "selected-province" : ""}" data-province="${place.id}" transform="translate(${point.x.toFixed(1)} ${point.y.toFixed(1)})"><title>${escapeHtml(placeTitle(place))}</title><circle class="sea-space-halo" r="18"/><circle class="sea-space-ring" r="7"/></g>`);
   }
 
   const labels = game.map.filter((place) => place.kind !== "sea").map((place) => {
@@ -530,17 +585,19 @@ function renderMap() {
     const [labelX, labelY] = labelAnchors[place.id] ?? [place.x, place.y];
     const style = `--x:${labelX}%;--y:${labelY}%;${color ? `--province-color:${color};` : ""}`;
     const type = provinceType(place, provinceById);
-    return `<div class="territory-label province-label-${type} ${targets.has(place.id) ? "selected-destination" : ""}" style="${style}" title="${escapeHtml(placeTitle(place, ownerFaction))}"><span class="territory-name">${escapeHtml(place.name)}</span>${center || units ? `<span class="territory-assets">${center}${units ? `<span class="unit-stack">${units}</span>` : ""}</span>` : ""}</div>`;
+    return `<div class="territory-label province-label-${type} ${targets.has(place.id) ? "selected-destination" : ""} ${selectedProvinceId === place.id ? "selected-province" : ""}" data-province="${place.id}" style="${style}" title="${escapeHtml(placeTitle(place, ownerFaction))}"><span class="territory-name">${escapeHtml(labelName(place))}</span>${center || units ? `<span class="territory-assets">${center}${units ? `<span class="unit-stack">${units}</span>` : ""}</span>` : ""}</div>`;
   }).join("");
 
   const seaTokens = game.map.filter((place) => place.kind === "sea").map((place) => {
     const units = renderUnitTokens(place, pending);
     const style = `--x:${place.x}%;--y:${place.y}%;`;
-    return `<div class="sea-province-label ${targets.has(place.id) ? "selected-destination" : ""}" style="${style}" title="${escapeHtml(placeTitle(place))}"><span class="territory-name">${escapeHtml(seaName(place))}</span>${units ? `<span class="unit-stack">${units}</span>` : ""}</div>`;
+    return `<div class="sea-province-label ${targets.has(place.id) ? "selected-destination" : ""} ${selectedProvinceId === place.id ? "selected-province" : ""}" data-province="${place.id}" style="${style}" title="${escapeHtml(placeTitle(place))}"><span class="territory-name">${escapeHtml(seaName(place))}</span>${units ? `<span class="unit-stack">${units}</span>` : ""}</div>`;
   }).join("");
 
   const macroBorders = territoryRegions.map((region) => `<path class="macro-border" d="${polygonPath(region.polygon)}"/>`).join("");
-  map.innerHTML = `${worldArt()}<svg class="territory-layer" viewBox="0 0 ${BOARD_WIDTH} ${BOARD_HEIGHT}" preserveAspectRatio="none" aria-hidden="true"><defs><filter id="territory-shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="6" stdDeviation="7" flood-color="#06101a" flood-opacity=".38"/></filter><clipPath id="world-land-clip">${worldLandMarkup}</clipPath></defs><g filter="url(#territory-shadow)" clip-path="url(#world-land-clip)">${territoryLayer}</g><g class="macro-borders">${macroBorders}</g><g class="real-coastline">${worldLandMarkup}</g></svg><svg class="route-layer" viewBox="0 0 ${BOARD_WIDTH} ${BOARD_HEIGHT}" preserveAspectRatio="none" aria-hidden="true"><g class="sea-lanes">${seaRoutes.join("")}</g><g class="land-routes">${landRoutes.join("")}</g><g class="sea-spaces">${seaMarkers.join("")}</g></svg><div class="map-label-layer">${labels}${seaTokens}</div>`;
+  const inspector = selectedProvinceId ? renderProvinceInfo(provinceById[selectedProvinceId]) : "";
+  map.innerHTML = `${worldArt()}<svg class="territory-layer" viewBox="0 0 ${BOARD_WIDTH} ${BOARD_HEIGHT}" preserveAspectRatio="none" aria-hidden="true"><defs><filter id="territory-shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="6" stdDeviation="7" flood-color="#06101a" flood-opacity=".38"/></filter><clipPath id="world-land-clip">${worldLandMarkup}</clipPath></defs><g filter="url(#territory-shadow)" clip-path="url(#world-land-clip)">${territoryLayer}</g><g class="macro-borders">${macroBorders}</g><g class="real-coastline">${worldLandMarkup}</g></svg><svg class="route-layer" viewBox="0 0 ${BOARD_WIDTH} ${BOARD_HEIGHT}" preserveAspectRatio="none" aria-hidden="true"><g class="sea-lanes">${seaRoutes.join("")}</g><g class="land-routes">${landRoutes.join("")}</g><g class="sea-spaces">${seaMarkers.join("")}</g></svg><div class="map-label-layer">${labels}${seaTokens}</div>${inspector}`;
+  installMapInteractions(map);
 }
 
 function renderScores() {
