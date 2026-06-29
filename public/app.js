@@ -191,7 +191,7 @@ function renderStatus() {
   const acceptingOrders = ["orders", "retreats", "adjustments"].includes(game.status);
   const copy = spectator ? "Public board display. Private negotiations and uncommitted orders remain hidden." : game.status === "lobby" ? "Choose a faction. The convener starts when every envoy is ready." : game.status === "finished" ? `${player(game.winnerId)?.name ?? "A rival"} has claimed the council.` : game.status === "retreats" ? "Dislodged units must retreat or disband before the season closes." : game.status === "adjustments" ? "Winter builds and disbands reconcile unit count with supply-center count." : "Movement, support, and convoy orders remain private until every required envoy commits.";
   $("#status").innerHTML = `<div class="eyebrow">${escapeHtml(status)}</div><div class="status-title">${acceptingOrders ? `${ready}/${playerCount} committed` : escapeHtml(status)}</div><p class="status-copy">${escapeHtml(copy)}</p>${acceptingOrders && !spectator && required.includes(session.playerId) ? `<p class="status-ready">${game.ordersSubmitted.includes(session.playerId) ? "YOUR ORDERS ARE SEALED" : "YOUR ORDERS ARE NOT YET COMMITTED"}</p>` : ""}`;
-  $("#map-hint").textContent = spectator ? (acceptingOrders ? `Live public board · ${status} · ${ready}/${playerCount} committed` : `Live public board · ${status}`) : "Territory borders show land movement. Dashed lanes are fleet and convoy spaces.";
+  $("#map-hint").textContent = spectator ? (acceptingOrders ? `Live public board · ${status} · ${ready}/${playerCount} committed` : `Live public board · ${status}`) : "Named land and water provinces show legal topology. Dashed lines are secondary naval aids.";
 }
 
 function renderFactionPanel() {
@@ -427,6 +427,18 @@ function seaLanePath(route, a, b) {
   }
   return `M ${from.x.toFixed(1)} ${from.y.toFixed(1)} Q ${controlX.toFixed(1)} ${controlY.toFixed(1)} ${to.x.toFixed(1)} ${to.y.toFixed(1)}`;
 }
+function provinceType(place, provinceById = null) {
+  if (place.kind === "sea") return "water";
+  const lookup = provinceById ?? Object.fromEntries((game?.map ?? []).map((candidate) => [candidate.id, candidate]));
+  return place.neighbors.some((neighbor) => lookup[neighbor]?.kind === "sea") ? "coastal" : "inland";
+}
+function provinceTypeLabel(place, provinceById = null) {
+  const type = provinceType(place, provinceById);
+  return type === "water" ? "water province" : `${type} land province`;
+}
+function seaName(place) {
+  return place.name.replace(/ Sea Route$/, " Sea").replace(/–/g, "–");
+}
 function seaRouteEndpoints(place) {
   if (place.kind !== "sea" || !place.id.startsWith("water_")) return null;
   const parts = place.id.replace(/^water_/, "").split("_");
@@ -441,7 +453,7 @@ function draftTargetIds() {
   return targets;
 }
 function placeTitle(place, ownerFaction) {
-  return `${place.name}${place.supplyCenter ? ` · ${place.supplyCenter} supply center` : place.kind === "sea" ? " · fleet sea lane" : " · ordinary province"}${ownerFaction ? ` — controlled by ${ownerFaction.name}` : ""}`;
+  return `${place.kind === "sea" ? seaName(place) : place.name} · ${provinceTypeLabel(place)}${place.supplyCenter ? ` · ${place.supplyCenter} supply center` : " · non-center"}${ownerFaction ? ` — controlled by ${ownerFaction.name}` : ""}`;
 }
 function placeColor(place, ownerFaction) {
   const homeFaction = faction(place.homeFactionId) ?? game.factions.find((choice) => choice.homes.includes(place.id));
@@ -477,7 +489,8 @@ function renderMap() {
   const territoryLayer = game.map.filter((place) => place.kind !== "sea").map((place) => {
     const ownerFaction = faction(player(game.control[place.id])?.faction);
     const color = placeColor(place, ownerFaction);
-    const classes = ["territory", `territory-${place.kind}`];
+    const type = provinceType(place, provinceById);
+    const classes = ["territory", `territory-${place.kind}`, `province-${type}`];
     if (color) classes.push("has-color");
     if (ownerFaction) classes.push("controlled");
     if (targets.has(place.id)) classes.push("selected-destination");
@@ -505,7 +518,7 @@ function renderMap() {
     const point = boardPoint(place);
     const selected = targets.has(place.id);
     seaRoutes.push(`<path class="route route-sea-lane ${selected ? "selected-destination" : ""}" d="${seaLanePath(place, a, b)}"><title>${escapeHtml(placeTitle(place))}</title></path>`);
-    seaMarkers.push(`<g class="sea-space ${selected ? "selected-destination" : ""}" transform="translate(${point.x.toFixed(1)} ${point.y.toFixed(1)})"><title>${escapeHtml(placeTitle(place))}</title><circle class="sea-space-halo" r="13"/><circle class="sea-space-ring" r="5.2"/></g>`);
+    seaMarkers.push(`<g class="sea-space ${selected ? "selected-destination" : ""}" transform="translate(${point.x.toFixed(1)} ${point.y.toFixed(1)})"><title>${escapeHtml(placeTitle(place))}</title><circle class="sea-space-halo" r="18"/><circle class="sea-space-ring" r="7"/></g>`);
   }
 
   const labels = game.map.filter((place) => place.kind !== "sea").map((place) => {
@@ -515,17 +528,18 @@ function renderMap() {
     const units = renderUnitTokens(place, pending);
     const [labelX, labelY] = labelAnchors[place.id] ?? [place.x, place.y];
     const style = `--x:${labelX}%;--y:${labelY}%;${color ? `--province-color:${color};` : ""}`;
-    return `<div class="territory-label ${targets.has(place.id) ? "selected-destination" : ""}" style="${style}" title="${escapeHtml(placeTitle(place, ownerFaction))}"><span class="territory-name">${escapeHtml(place.name)}</span>${center || units ? `<span class="territory-assets">${center}${units ? `<span class="unit-stack">${units}</span>` : ""}</span>` : ""}</div>`;
+    const type = provinceType(place, provinceById);
+    return `<div class="territory-label province-label-${type} ${targets.has(place.id) ? "selected-destination" : ""}" style="${style}" title="${escapeHtml(placeTitle(place, ownerFaction))}"><span class="territory-name">${escapeHtml(place.name)}</span>${center || units ? `<span class="territory-assets">${center}${units ? `<span class="unit-stack">${units}</span>` : ""}</span>` : ""}</div>`;
   }).join("");
 
   const seaTokens = game.map.filter((place) => place.kind === "sea").map((place) => {
     const units = renderUnitTokens(place, pending);
-    if (!units && !targets.has(place.id)) return "";
     const style = `--x:${place.x}%;--y:${place.y}%;`;
-    return `<div class="sea-unit-anchor ${targets.has(place.id) ? "selected-destination" : ""}" style="${style}" title="${escapeHtml(placeTitle(place))}">${units ? `<span class="unit-stack">${units}</span>` : ""}</div>`;
+    return `<div class="sea-province-label ${targets.has(place.id) ? "selected-destination" : ""}" style="${style}" title="${escapeHtml(placeTitle(place))}"><span class="territory-name">${escapeHtml(seaName(place))}</span>${units ? `<span class="unit-stack">${units}</span>` : ""}</div>`;
   }).join("");
 
-  map.innerHTML = `${worldArt()}<svg class="territory-layer" viewBox="0 0 ${BOARD_WIDTH} ${BOARD_HEIGHT}" preserveAspectRatio="none" aria-hidden="true"><defs><filter id="territory-shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="6" stdDeviation="7" flood-color="#06101a" flood-opacity=".38"/></filter><clipPath id="world-land-clip">${worldLandMarkup}</clipPath></defs><g filter="url(#territory-shadow)" clip-path="url(#world-land-clip)">${territoryLayer}</g><g class="real-coastline">${worldLandMarkup}</g></svg><svg class="route-layer" viewBox="0 0 ${BOARD_WIDTH} ${BOARD_HEIGHT}" preserveAspectRatio="none" aria-hidden="true"><g class="sea-lanes">${seaRoutes.join("")}</g><g class="land-routes">${landRoutes.join("")}</g><g class="sea-spaces">${seaMarkers.join("")}</g></svg><div class="map-label-layer">${labels}${seaTokens}</div>`;
+  const macroBorders = territoryRegions.map((region) => `<path class="macro-border" d="${polygonPath(region.polygon)}"/>`).join("");
+  map.innerHTML = `${worldArt()}<svg class="territory-layer" viewBox="0 0 ${BOARD_WIDTH} ${BOARD_HEIGHT}" preserveAspectRatio="none" aria-hidden="true"><defs><filter id="territory-shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="6" stdDeviation="7" flood-color="#06101a" flood-opacity=".38"/></filter><clipPath id="world-land-clip">${worldLandMarkup}</clipPath></defs><g filter="url(#territory-shadow)" clip-path="url(#world-land-clip)">${territoryLayer}</g><g class="macro-borders">${macroBorders}</g><g class="real-coastline">${worldLandMarkup}</g></svg><svg class="route-layer" viewBox="0 0 ${BOARD_WIDTH} ${BOARD_HEIGHT}" preserveAspectRatio="none" aria-hidden="true"><g class="sea-lanes">${seaRoutes.join("")}</g><g class="land-routes">${landRoutes.join("")}</g><g class="sea-spaces">${seaMarkers.join("")}</g></svg><div class="map-label-layer">${labels}${seaTokens}</div>`;
 }
 
 function renderScores() {
@@ -538,7 +552,7 @@ function renderScores() {
   }).join("");
   $("#scores").innerHTML = scores;
   const occupiedFactions = game.factions.filter((choice) => game.players.some((candidate) => candidate.faction === choice.id));
-  $("#legend").innerHTML = `<span class="legend-item legend-rule"><i class="legend-node home"></i>Home center</span><span class="legend-item legend-rule"><i class="legend-node neutral"></i>Neutral center</span><span class="legend-item legend-rule"><i class="legend-node buffer"></i>Ordinary territory</span><span class="legend-item legend-rule"><i class="legend-node sea"></i>Fleet sea lane</span><span class="legend-item legend-rule"><i class="legend-route"></i>Convoy route</span>${occupiedFactions.map((choice) => `<span class="legend-item"><i class="legend-swatch" style="background:${choice.color}"></i>${escapeHtml(choice.name)}</span>`).join("")}`;
+  $("#legend").innerHTML = `<span class="legend-item legend-rule"><i class="legend-node home"></i>Home center</span><span class="legend-item legend-rule"><i class="legend-node neutral"></i>Neutral center</span><span class="legend-item legend-rule"><i class="legend-node buffer"></i>Ordinary territory</span><span class="legend-item legend-rule"><i class="legend-node sea"></i>Water province</span><span class="legend-item legend-rule"><i class="legend-route"></i>Naval adjacency aid</span>${occupiedFactions.map((choice) => `<span class="legend-item"><i class="legend-swatch" style="background:${choice.color}"></i>${escapeHtml(choice.name)}</span>`).join("")}`;
 }
 
 function renderChat() {
