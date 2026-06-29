@@ -478,6 +478,27 @@ function draftTargetIds() {
 }
 function clamp(value, min, max) { return Math.min(max, Math.max(min, value)); }
 function mapViewportElements() { return { viewport: document.querySelector(".map-scroll"), map: $("#map") }; }
+const MAP_ZOOM_CLASSES = ["map-zoom-world", "map-zoom-strategic", "map-zoom-regional", "map-zoom-tactical"];
+function currentMapDisplayMode(viewport = document.querySelector(".map-scroll")) {
+  if (isSpectator()) return "spectator";
+  const rect = viewport?.getBoundingClientRect();
+  if (window.matchMedia?.("(max-width: 760px)").matches || (rect && rect.width < 640)) return "mobile";
+  return "embedded";
+}
+function currentMapZoomLevel(scale = mapViewport.scale, mode = currentMapDisplayMode()) {
+  const { viewport } = mapViewportElements();
+  const rect = viewport?.getBoundingClientRect();
+  const physicalWidth = rect?.width || window.innerWidth || 0;
+  const physicalHeight = rect?.height || window.innerHeight || 0;
+  const physicalDiagonal = Math.hypot(physicalWidth, physicalHeight);
+  const sizeBias = clamp((physicalDiagonal - 760) / 1300, -0.18, 0.18);
+  const modeBias = mode === "spectator" ? 0.22 : mode === "mobile" ? 0.14 : mode === "embedded" ? -0.06 : 0;
+  const effectiveScale = scale + sizeBias + modeBias;
+  if (effectiveScale >= 2.35) return "tactical";
+  if (effectiveScale >= 1.45) return "regional";
+  if (effectiveScale >= 1.08) return "strategic";
+  return "world";
+}
 function clampMapViewport() {
   const { viewport, map } = mapViewportElements();
   if (!viewport || !map) return;
@@ -490,11 +511,16 @@ function clampMapViewport() {
   mapViewport.y = mapHeight <= viewportRect.height ? (viewportRect.height - mapHeight) / 2 : clamp(mapViewport.y, minY, 0);
 }
 function applyMapViewport() {
-  const { map } = mapViewportElements();
+  const { viewport, map } = mapViewportElements();
   if (!map) return;
   clampMapViewport();
+  const displayMode = currentMapDisplayMode(viewport);
+  const zoomLevel = currentMapZoomLevel(mapViewport.scale, displayMode);
   map.style.transform = `translate3d(${mapViewport.x}px, ${mapViewport.y}px, 0) scale(${mapViewport.scale})`;
-  map.classList.toggle("regional-zoom", mapViewport.scale > 1.35);
+  map.dataset.zoomLevel = zoomLevel;
+  map.dataset.displayMode = displayMode;
+  map.classList.remove(...MAP_ZOOM_CLASSES, "regional-zoom");
+  map.classList.add(`map-zoom-${zoomLevel}`);
 }
 function zoomMapAt(clientX, clientY, nextScale) {
   const { viewport } = mapViewportElements();
@@ -635,8 +661,8 @@ function buildMapViewModel() {
     return [place.id, { owner, ownerFaction, color: placeColor(place, ownerFaction) }];
   }));
   return {
-    displayMode: isSpectator() ? "spectator" : "player",
-    zoomMode: mapViewport.scale > 1.35 ? "regional" : "world",
+    displayMode: currentMapDisplayMode(),
+    zoomMode: currentMapZoomLevel(),
     provinceById,
     territories,
     ownershipByProvinceId,
@@ -738,7 +764,7 @@ function renderLabelLayer(model) {
     const [labelX, labelY] = labelAnchors[place.id] ?? [place.x, place.y];
     const style = `--x:${labelX}%;--y:${labelY}%;${metadata.color ? `--province-color:${metadata.color};` : ""}`;
     const type = provinceType(place, model.provinceById);
-    return `<div class="territory-label province-label-${type} ${model.plannedTargetIds.has(place.id) ? "selected-destination" : ""} ${model.selectedProvinceId === place.id ? "selected-province" : ""}" data-province="${place.id}" style="${style}" title="${escapeHtml(placeTitle(place, metadata.ownerFaction, model))}"><span class="territory-name">${escapeHtml(labelName(place))}</span>${center || units ? `<span class="territory-assets">${center}${units ? `<span class="unit-stack">${units}</span>` : ""}</span>` : ""}</div>`;
+    return `<div class="territory-label province-label-${type} ${model.plannedTargetIds.has(place.id) ? "selected-destination" : ""} ${model.selectedProvinceId === place.id ? "selected-province" : ""}" data-province="${place.id}" style="${style}" title="${escapeHtml(placeTitle(place, metadata.ownerFaction, model))}"><span class="territory-name territory-name-short">${escapeHtml(labelName(place))}</span><span class="territory-name territory-name-full">${escapeHtml(place.name)}</span>${center || units ? `<span class="territory-assets">${center}${units ? `<span class="unit-stack">${units}</span>` : ""}</span>` : ""}</div>`;
   }).join("");
   return `<div class="map-label-layer" ${mapLayerAttributes("labels", model)}>${labels}</div>`;
 }
