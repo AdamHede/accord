@@ -40,6 +40,7 @@
           <a class="brand" href="/">ACCORD</a>
           <div id="room-meta" class="room-meta"></div>
           <button id="copy-room" class="quiet" type="button">Copy invite</button>
+          <button id="open-map" class="quiet" type="button" hidden>Open map</button>
           <button id="spectator-fullscreen" class="quiet" type="button" hidden>Fullscreen</button>
           <button id="leave-room" class="quiet" type="button">Leave</button>
         </header>
@@ -50,9 +51,9 @@
             <section id="order-panel" class="panel"></section>
             <section class="panel activity-panel"><h3>Dispatches</h3><div id="activity" class="activity"></div></section>
           </aside>
-          <section class="map-panel">
+          <section class="map-panel" data-map-mode="embedded">
             <div class="map-header"><div><span class="eyebrow">The world board</span><h2>The Balance of the World</h2></div><p id="map-hint">Territory borders show land movement. Dashed lanes are fleet and convoy spaces.</p></div>
-            <div class="map-scroll"><div id="map" class="map" aria-label="World game board"></div></div>
+            <div class="map-scroll"><button id="close-map" class="quiet map-close" type="button" hidden>Close map</button><div id="map" class="map" aria-label="World game board"></div></div>
             <div id="legend" class="legend"></div>
           </section>
           <aside class="right-rail">
