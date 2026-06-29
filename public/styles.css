@@ -171,3 +171,43 @@ textarea { min-height: 78px; resize: vertical; }
 
 @media (max-width: 1320px) { .game-layout { grid-template-columns: minmax(220px, 280px) 1fr; } .right-rail { grid-column: 1 / -1; grid-template-columns: 230px 1fr; } .chat { min-height: 150px; max-height: 240px; } }
 @media (max-width: 760px) { .landing-grid, .game-layout, .right-rail { grid-template-columns: 1fr; } .landing { padding-top: 94px; } .topbar { gap: 9px; padding: 0 13px; } .room-meta { display: none; } .map-panel { min-height: 0; padding: 18px 12px; } .map { width: 920px; min-height: 475px; } .map-header p { display: none; } .right-rail { grid-column: auto; } .chat { max-height: 310px; } }
+
+/* Progressive map disclosure: default view is strategic, tap/zoom reveals rules detail. */
+.macro-border { stroke: rgba(14, 18, 22, .34); stroke-width: 2; }
+.route-layer { z-index: 3; }
+.route-land { opacity: .34; }
+.route-sea-lane { opacity: .18; stroke-width: 1.1; }
+.route-sea-lane.planning-route,
+.route-sea-lane.selected-destination { opacity: .95; }
+.sea-space-halo { fill: rgba(8, 64, 82, .32); stroke: rgba(131, 240, 232, .82); stroke-width: 1.65; stroke-dasharray: none; }
+.sea-space { pointer-events: auto; }
+.sea-space-ring { fill: rgba(131, 240, 232, .74); }
+.territory-label { width: 64px; }
+.sea-province-label { width: 74px; color: rgba(197, 255, 250, .86); font-style: italic; }
+.sea-province-label .territory-name { font-size: 6.2px; font-weight: 800; letter-spacing: .04em; }
+.territory-name { font-size: 7.2px; color: #fff7e2; }
+.center-token { width: 10px; height: 10px; box-shadow: 0 0 0 1px rgba(8, 18, 27, .95), 0 0 0 3px color-mix(in srgb, var(--province-color, #f4ead6) 44%, transparent); }
+.unit-token { z-index: 2; width: 16px; height: 16px; font-size: 9px; pointer-events: auto; }
+.unit-token.selected-unit { outline: 2px solid #ffe07a; outline-offset: 2px; box-shadow: 0 0 12px rgba(255,224,122,.88), 0 2px 4px rgba(0,0,0,.42); }
+.territory.selection-muted { opacity: .42; filter: saturate(.55); }
+.territory.selected-province,
+.sea-space.selected-province .sea-space-halo,
+.territory-label.selected-province,
+.sea-province-label.selected-province { filter: drop-shadow(0 0 10px rgba(114, 203, 207, .75)); }
+.map-inspector { position: absolute; z-index: 9; left: 12px; bottom: 12px; display: grid; gap: 3px; max-width: min(280px, calc(100% - 24px)); padding: 10px 12px; border: 1px solid rgba(114, 203, 207, .42); border-radius: 10px; background: rgba(6, 15, 28, .88); color: var(--ink); box-shadow: 0 14px 36px rgba(0,0,0,.35); font-size: 11px; line-height: 1.3; backdrop-filter: blur(8px); }
+.map-inspector strong { color: #fff2bf; font: 700 13px Manrope, system-ui, sans-serif; }
+.map-inspector small { color: var(--muted); }
+.map.regional-zoom .territory-label,
+.map.regional-zoom .sea-province-label { width: 104px; padding: 3px 5px; border-radius: 5px; background: rgba(8, 18, 29, .34); }
+.map.regional-zoom .territory-name,
+.map.regional-zoom .sea-province-label .territory-name { font-size: 8.5px; }
+.map.regional-zoom .route-sea-lane { opacity: .5; }
+.map.regional-zoom .macro-border { opacity: .22; }
+
+@media (max-width: 760px) {
+  .territory-label { width: 58px; }
+  .sea-province-label { width: 68px; }
+  .territory-name { font-size: 6.7px; }
+  .sea-province-label .territory-name { font-size: 5.9px; }
+  .map-inspector { left: 8px; right: 8px; bottom: 8px; max-width: none; }
+}
