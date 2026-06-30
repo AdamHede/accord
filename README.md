@@ -31,6 +31,7 @@ npm run dev      # Start the local Cloudflare Workers development server
 npm run check    # Generate Worker types and type-check the project
 npm test         # Run engine and simulator tests
 npm run smoke    # Run the API smoke test
+npm run visual:smoke # Run browser visual smoke checks and save screenshots
 npm run deploy   # Deploy with Wrangler
 npm run simulate # Run seeded headless balance simulations
 ```
@@ -71,6 +72,28 @@ ACCORD_AI_TIER=balanced
 ```
 
 In GitHub Actions, store the same value as a repository secret named `OPENAI_API_KEY` and set `ACCORD_AI_TIER` to `high`, `balanced`, or `test` for the deployment environment.
+
+## Browser visual smoke testing
+
+The visual smoke script is intended for local desktop development or CI jobs with Playwright browsers installed. It uses the public API and WebSocket protocol to create multiple started rooms, joins a spectator display for each room, moves the map camera through major regions, selects a player unit, asserts that key board layers are present, and writes screenshots to `artifacts/visual-smoke/`.
+
+```sh
+# Terminal 1
+npm run dev
+
+# Terminal 2
+npx playwright install chromium # first run only
+npm run visual:smoke
+```
+
+Useful options:
+
+```sh
+ACCORD_URL=http://127.0.0.1:8787 ACCORD_VISUAL_ROOMS=4 npm run visual:smoke
+ACCORD_VISUAL_OUTPUT=tmp/visual-review npm run visual:smoke
+```
+
+A local desktop browser is the best place for interactive visual review because you can inspect generated screenshots, resize viewports, and manually pan/zoom. The same script is still deterministic enough for CI once the server is running and Chromium is installed.
 
 ## Headless balance simulator
 

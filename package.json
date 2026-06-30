@@ -11,10 +11,12 @@
     "check": "npm run types && tsc --noEmit",
     "test": "vitest run",
     "smoke": "node scripts/smoke.mjs",
-    "simulate": "tsc -p tsconfig.simulator.json && node .simulator-output/src/simulate.js"
+    "simulate": "tsc -p tsconfig.simulator.json && node .simulator-output/src/simulate.js",
+    "visual:smoke": "node scripts/visual-smoke.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "playwright": "^1.61.1",
     "typescript": "^5.9.3",
     "vitest": "^3.2.4",
     "wrangler": "^4.103.0"
