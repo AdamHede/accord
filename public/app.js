@@ -425,16 +425,17 @@ function seaLanePath(route, a, b) {
   const mid = boardPoint(route);
   const midX = (from.x + to.x) / 2;
   const midY = (from.y + to.y) / 2;
-  const span = Math.abs(to.x - from.x);
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const length = Math.hypot(dx, dy) || 1;
+  const hint = seaDisplay(route)?.lanePath ?? {};
   let controlX = mid.x;
   let controlY = mid.y;
-  if (span > 520) {
-    controlY = midY < BOARD_HEIGHT / 2 ? Math.max(18, midY - 70) : Math.min(BOARD_HEIGHT - 18, midY + 70);
+  if (hint.wrap || Math.abs(to.x - from.x) > 520) {
+    const bend = Math.abs(hint.bend ?? 70);
+    controlY = midY < BOARD_HEIGHT / 2 ? Math.max(18, midY - bend) : Math.min(BOARD_HEIGHT - 18, midY + bend);
   } else {
-    const dx = to.x - from.x;
-    const dy = to.y - from.y;
-    const length = Math.hypot(dx, dy) || 1;
-    const bend = midY > BOARD_HEIGHT * 0.6 ? 34 : midY < BOARD_HEIGHT * 0.22 ? -28 : 24;
+    const bend = hint.bend ?? (midY > BOARD_HEIGHT * 0.6 ? 34 : midY < BOARD_HEIGHT * 0.22 ? -28 : 24);
     controlX = midX + (-dy / length) * bend;
     controlY = midY + (dx / length) * bend;
   }
@@ -453,21 +454,23 @@ const defaultLandLabels = {
   awc: "Alaska", ena: "E. N. America", yuc: "Yucatán", car: "Carib.", pat: "Patagonia", bri: "Britain", weu: "W. Europe", ceu: "C. Europe", sca: "Scand.", eeu: "E. Europe", lib: "Libya", egy: "Egypt", ara: "Arabia", per: "Persia", eaf: "E. Africa", cap: "Cape", cas: "C. Asia", ste: "Steppe", jak: "Japan/Korea", sea: "S.E. Asia", mal: "Malacca", png: "New Guinea"
 };
 
-const seaLabels = {
-  water_awc_sib: "Bering Sea", water_car_ena: "W. Atlantic", water_car_pan: "Caribbean Sea", water_bra_car: "S. Atlantic", water_bri_sca: "North Sea", water_bri_weu: "Channel", water_ibe_mag: "W. Med.", water_mag_egy: "E. Med.", water_ara_eaf: "Red Sea", water_cap_aus: "Indian Ocean", water_ind_mal: "Andaman Sea", water_mal_sea: "Malacca Strait", water_aus_mal: "Timor Sea", water_mal_png: "Banda Sea", water_aus_png: "Coral Sea", water_man_jak: "E. China Sea", water_jak_sib: "N. Pacific"
-};
-
 function labelName(place) {
   return defaultLandLabels[place.id] ?? place.name;
 }
 
+function seaDisplay(place) { return place?.seaDisplay ?? null; }
 function seaName(place) {
-  return seaLabels[place.id] ?? place.name.replace(/ Sea Route$/, " Sea").replace(/–/g, "–");
+  return seaDisplay(place)?.name ?? place.name.replace(/ Sea Route$/, " Sea");
+}
+function seaAbbreviation(place) {
+  return seaDisplay(place)?.abbreviation ?? seaName(place).split(/\s+/).map((part) => part[0]).join("").slice(0, 4).toUpperCase();
 }
 function seaRouteEndpoints(place) {
-  if (place.kind !== "sea" || !place.id.startsWith("water_")) return null;
-  const parts = place.id.replace(/^water_/, "").split("_");
-  return parts.length === 2 ? parts : null;
+  return place.kind === "sea" ? (seaDisplay(place)?.endpoints ?? null) : null;
+}
+function seaAnchor(place, key = "labelAnchor") {
+  const anchor = seaDisplay(place)?.[key];
+  return anchor ? [anchor.x, anchor.y] : [place.x, place.y];
 }
 function selectedLegalTargetIds() {
   const unit = activeUnits().find((candidate) => candidate.id === selectedUnitId);
@@ -868,7 +871,14 @@ function renderProvinceInfo(place, model = buildMapViewModel()) {
   const occupant = provinceOccupant(model, place);
   const type = provinceType(place, model.provinceById);
   const fleet = placeCanHostFleet(place) ? "yes" : "no";
-  return `<div class="map-inspector"><strong>${escapeHtml(place.kind === "sea" ? seaName(place) : place.name)}</strong><span>${escapeHtml(provinceTypeLabel(place, model.provinceById))}</span><span>Center: ${escapeHtml(place.supplyCenter ?? "none")}</span><span>Controller: ${escapeHtml(metadata.ownerFaction?.name ?? "uncontrolled")}</span><span>Occupant: ${occupant ? escapeHtml(`${faction(occupant.faction)?.name ?? "Unknown"} ${occupant.type}`) : "none"}</span>${type !== "water" ? `<span>Army: yes · Fleet: ${fleet}</span>` : `<span>Fleet: yes · Army: no</span>`}<small>Tap units for legal moves. Long-press shows browser details.</small></div>`;
+  if (place.kind === "sea") {
+    const endpoints = seaRouteEndpoints(place)?.map((id) => model.provinceById[id]).filter(Boolean) ?? [];
+    const adjacentSea = place.neighbors.map((id) => model.provinceById[id]).filter((candidate) => candidate?.kind === "sea");
+    const convoyOrders = model.orderOverlays.filter((item) => item.order.type === "convoy" && item.origin?.id === place.id).length;
+    const region = seaDisplay(place)?.region ? ` · ${seaDisplay(place).region}` : "";
+    return `<div class="map-inspector map-inspector-sea"><strong>${escapeHtml(seaName(place))} <em>${escapeHtml(seaAbbreviation(place))}</em></strong><span>Fleet-only water province${escapeHtml(region)}</span><span>Priority: ${escapeHtml(String(seaDisplay(place)?.priority ?? 1))}</span><span>Land endpoints: ${endpoints.length ? escapeHtml(endpoints.map((item) => item.name).join(" · ")) : "none"}</span><span>Adjacent sea routes: ${adjacentSea.length ? escapeHtml(adjacentSea.map(seaName).join(" · ")) : "none"}</span><span>Convoy relevance: ${endpoints.length >= 2 ? "can bridge adjacent coasts" : "limited"}${convoyOrders ? ` · ${convoyOrders} active convoy order${convoyOrders === 1 ? "" : "s"}` : ""}</span><span>Occupying fleet: ${occupant ? escapeHtml(`${faction(occupant.faction)?.name ?? "Unknown"} fleet`) : "none"}</span><small>Tap fleets for legal moves; convoy overlays follow the sea lane.</small></div>`;
+  }
+  return `<div class="map-inspector"><strong>${escapeHtml(place.name)}</strong><span>${escapeHtml(provinceTypeLabel(place, model.provinceById))}</span><span>Center: ${escapeHtml(place.supplyCenter ?? "none")}</span><span>Controller: ${escapeHtml(metadata.ownerFaction?.name ?? "uncontrolled")}</span><span>Occupant: ${occupant ? escapeHtml(`${faction(occupant.faction)?.name ?? "Unknown"} ${occupant.type}`) : "none"}</span>${type !== "water" ? `<span>Army: yes · Fleet: ${fleet}</span>` : `<span>Fleet: yes · Army: no</span>`}<small>Tap units for legal moves. Long-press shows browser details.</small></div>`;
 }
 
 function renderBaseWorldLayer(model) {
@@ -895,16 +905,20 @@ function renderTerritoryLayer(model) {
 
 function renderRouteLayer(model) {
   const landRoutes = [];
-  const seaRoutes = [];
-  const seaMarkers = [];
   for (const place of game.map) {
-    if (place.kind !== "sea") {
-      for (const neighbor of place.neighbors) {
-        const neighborPlace = model.provinceById[neighbor];
-        if (neighborPlace?.kind !== "sea" && place.id < neighbor) landRoutes.push(`<path class="route route-land" d="${routePath(place, neighborPlace)}"/>`);
-      }
-      continue;
+    if (place.kind === "sea") continue;
+    for (const neighbor of place.neighbors) {
+      const neighborPlace = model.provinceById[neighbor];
+      if (neighborPlace?.kind !== "sea" && place.id < neighbor) landRoutes.push(`<path class="route route-land" d="${routePath(place, neighborPlace)}"/>`);
     }
+  }
+  return `<svg class="route-layer" ${mapLayerAttributes("routes", model)} viewBox="0 0 ${BOARD_WIDTH} ${BOARD_HEIGHT}" preserveAspectRatio="none" aria-hidden="true"><g class="land-routes">${landRoutes.join("")}</g></svg>`;
+}
+
+function renderSeaProvinceLayer(model) {
+  const seaRoutes = [];
+  const seaHitAreas = [];
+  for (const place of game.map.filter((candidate) => candidate.kind === "sea")) {
     const endpoints = seaRouteEndpoints(place);
     if (!endpoints) continue;
     const [a, b] = endpoints.map((id) => model.provinceById[id]);
@@ -912,10 +926,11 @@ function renderRouteLayer(model) {
     const point = boardPoint(place);
     const selected = model.selectedUnitId && model.legalTargetIds.has(place.id);
     const planned = model.plannedTargetIds.has(place.id);
+    const classes = `sea-space ${selected ? "selected-destination" : ""} ${planned ? "planned-destination" : ""} ${model.selectedProvinceId === place.id ? "selected-province" : ""}`;
     seaRoutes.push(`<path class="route route-sea-lane ${selected ? "selected-destination" : ""} ${planned ? "planned-destination" : ""} ${model.selectedUnitId ? "planning-route" : ""}" d="${seaLanePath(place, a, b)}"><title>${escapeHtml(placeTitle(place, null, model))}</title></path>`);
-    seaMarkers.push(`<g class="sea-space ${selected ? "selected-destination" : ""} ${planned ? "planned-destination" : ""} ${model.selectedProvinceId === place.id ? "selected-province" : ""}" data-province="${place.id}" transform="translate(${point.x.toFixed(1)} ${point.y.toFixed(1)})"><title>${escapeHtml(placeTitle(place, null, model))}</title><circle class="sea-space-halo" r="18"/><circle class="sea-space-ring" r="7"/></g>`);
+    seaHitAreas.push(`<g class="${classes}" data-province="${place.id}" transform="translate(${point.x.toFixed(1)} ${point.y.toFixed(1)})"><title>${escapeHtml(placeTitle(place, null, model))}</title><circle class="sea-space-hit" r="28"/><circle class="sea-space-halo" r="18"/><circle class="sea-space-ring" r="7"/></g>`);
   }
-  return `<svg class="route-layer" ${mapLayerAttributes("routes", model)} viewBox="0 0 ${BOARD_WIDTH} ${BOARD_HEIGHT}" preserveAspectRatio="none" aria-hidden="true"><g class="sea-lanes">${seaRoutes.join("")}</g><g class="land-routes">${landRoutes.join("")}</g><g class="sea-spaces">${seaMarkers.join("")}</g></svg>`;
+  return `<svg class="sea-province-layer" ${mapLayerAttributes("sea", model)} viewBox="0 0 ${BOARD_WIDTH} ${BOARD_HEIGHT}" preserveAspectRatio="none" aria-hidden="true"><g class="sea-lanes">${seaRoutes.join("")}</g><g class="sea-spaces">${seaHitAreas.join("")}</g></svg>`;
 }
 
 function renderUnitTokens(place, modelOrPending) {
@@ -946,9 +961,11 @@ function renderLabelLayer(model) {
 function renderUnitLayer(model) {
   const seaTokens = game.map.filter((place) => place.kind === "sea").map((place) => {
     const units = renderUnitTokens(place, model);
-    const style = `--x:${place.x}%;--y:${place.y}%;`;
+    const [fleetX, fleetY] = seaAnchor(place, "fleetAnchor");
+    const [labelX, labelY] = seaAnchor(place, "labelAnchor");
+    const style = `--x:${labelX}%;--y:${labelY}%;--fleet-x:${fleetX}%;--fleet-y:${fleetY}%;`;
     const selected = model.selectedUnitId && model.legalTargetIds.has(place.id);
-    return `<div class="sea-province-label ${selected ? "selected-destination" : ""} ${model.plannedTargetIds.has(place.id) ? "planned-destination" : ""} ${model.selectedProvinceId === place.id ? "selected-province" : ""}" data-province="${place.id}" style="${style}" title="${escapeHtml(placeTitle(place, null, model))}"><span class="territory-name">${escapeHtml(seaName(place))}</span>${units ? `<span class="unit-stack">${units}</span>` : ""}</div>`;
+    return `<div class="sea-province-label ${selected ? "selected-destination" : ""} ${model.plannedTargetIds.has(place.id) ? "planned-destination" : ""} ${model.selectedProvinceId === place.id ? "selected-province" : ""}" data-province="${place.id}" style="${style}" title="${escapeHtml(placeTitle(place, null, model))}"><span class="territory-name territory-name-short">${escapeHtml(seaAbbreviation(place))}</span><span class="territory-name territory-name-full">${escapeHtml(seaName(place))}</span>${units ? `<span class="sea-fleet-anchor"><span class="unit-stack">${units}</span></span>` : ""}</div>`;
   }).join("");
   return `<div class="map-unit-layer" ${mapLayerAttributes("units", model)}>${seaTokens}</div>`;
 }
@@ -1025,6 +1042,7 @@ function renderMap() {
     renderBaseWorldLayer(model),
     renderTerritoryLayer(model),
     renderRouteLayer(model),
+    renderSeaProvinceLayer(model),
     renderLabelLayer(model),
     renderUnitLayer(model),
     renderOrderOverlayLayer(model),

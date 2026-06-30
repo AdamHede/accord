@@ -14,6 +14,17 @@ export type GameStatus = "lobby" | "orders" | "retreats" | "adjustments" | "fini
 export type ProvinceKind = "home" | "neutral" | "buffer" | "sea";
 export type SupplyCenterKind = "home" | "neutral";
 
+export interface SeaProvinceDisplayMetadata {
+  name: string;
+  abbreviation: string;
+  labelAnchor: { x: number; y: number };
+  fleetAnchor: { x: number; y: number };
+  lanePath: { bend: number; wrap?: boolean };
+  priority: number;
+  region?: string;
+  endpoints: [string, string];
+}
+
 export interface Province {
   id: string;
   name: string;
@@ -24,11 +35,17 @@ export interface Province {
   homeFactionId: FactionId | null;
   seaNeighbors: string[];
   neighbors: string[];
+  seaDisplay: SeaProvinceDisplayMetadata | null;
 }
 
 type LandProvinceKind = Exclude<ProvinceKind, "sea">;
 type ProvinceDefinition = readonly [id: string, name: string, x: number, y: number, kind: LandProvinceKind];
 type ConnectionDefinition = readonly [a: string, b: string, kind: "land" | "sea"];
+type SeaDisplayDefinition = Omit<SeaProvinceDisplayMetadata, "labelAnchor" | "fleetAnchor" | "lanePath" | "endpoints"> & {
+  labelAnchor?: { x: number; y: number };
+  fleetAnchor?: { x: number; y: number };
+  lanePath?: { bend: number; wrap?: boolean };
+};
 
 // Coordinates are deliberately laid out as a world map rather than a grid. The
 // graph below is the game rule: the visual board is only a projection of it.
@@ -49,6 +66,27 @@ const connectionDefinitions: ConnectionDefinition[] = [
   ["per", "ind", "land"], ["per", "cas", "land"], ["ind", "cas", "land"], ["ind", "sea", "land"], ["sea", "chi", "land"], ["sea", "mal", "land"], ["chi", "mon", "land"], ["chi", "man", "land"], ["man", "jak", "sea"], ["mon", "sib", "land"], ["mon", "cas", "land"], ["ste", "cas", "land"], ["ste", "sib", "land"], ["sib", "awc", "sea"], ["sib", "jak", "sea"],
   ["mal", "png", "sea"], ["png", "aus", "sea"], ["mal", "aus", "sea"], ["cap", "aus", "sea"], ["mal", "ind", "sea"], ["mal", "sea", "sea"]
 ] as const;
+
+
+const seaDisplayDefinitions: Record<string, SeaDisplayDefinition> = {
+  water_awc_sib: { name: "Bering Sea", abbreviation: "BER", priority: 2, region: "North Pacific", lanePath: { bend: -70, wrap: true } },
+  water_car_ena: { name: "Western Atlantic", abbreviation: "WAT", priority: 3, region: "Atlantic" },
+  water_car_pan: { name: "Caribbean Sea", abbreviation: "CAR", priority: 4, region: "Atlantic" },
+  water_bra_car: { name: "South Atlantic", abbreviation: "SAT", priority: 3, region: "Atlantic" },
+  water_bri_sca: { name: "North Sea", abbreviation: "NTH", priority: 5, region: "Atlantic" },
+  water_bri_weu: { name: "English Channel", abbreviation: "ENG", priority: 5, region: "Atlantic" },
+  water_ibe_mag: { name: "Western Mediterranean", abbreviation: "WMS", priority: 4, region: "Mediterranean" },
+  water_mag_egy: { name: "Eastern Mediterranean", abbreviation: "EMS", priority: 4, region: "Mediterranean" },
+  water_ara_eaf: { name: "Red Sea", abbreviation: "RED", priority: 4, region: "Indian Ocean" },
+  water_cap_aus: { name: "Indian Ocean", abbreviation: "INDO", priority: 5, region: "Indian Ocean" },
+  water_ind_mal: { name: "Andaman Sea", abbreviation: "AND", priority: 4, region: "Indian Ocean" },
+  water_mal_sea: { name: "Malacca Strait", abbreviation: "MAL", priority: 5, region: "Indo-Pacific" },
+  water_aus_mal: { name: "Timor Sea", abbreviation: "TIM", priority: 4, region: "Indo-Pacific" },
+  water_mal_png: { name: "Banda Sea", abbreviation: "BAN", priority: 3, region: "Indo-Pacific" },
+  water_aus_png: { name: "Coral Sea", abbreviation: "COR", priority: 3, region: "South Pacific" },
+  water_man_jak: { name: "East China Sea", abbreviation: "ECS", priority: 4, region: "North Pacific" },
+  water_jak_sib: { name: "North Pacific", abbreviation: "NPO", priority: 3, region: "North Pacific" }
+};
 
 const homeFactionByProvince = new Map<string, FactionId>();
 for (const faction of FACTIONS) for (const home of faction.homes) homeFactionByProvince.set(home, faction.id);
@@ -76,7 +114,7 @@ function addNeighbor(map: Record<string, Province>, a: string, b: string, seaRou
 function createMap(): Record<string, Province> {
   const map = Object.fromEntries(provinceDefinitions.map(([id, name, x, y, kind]) => {
     const supplyCenter = kind === "home" || kind === "neutral" ? kind : null;
-    return [id, { id, name, x, y, kind, supplyCenter, homeFactionId: homeFactionByProvince.get(id) ?? null, neighbors: [], seaNeighbors: [] }];
+    return [id, { id, name, x, y, kind, supplyCenter, homeFactionId: homeFactionByProvince.get(id) ?? null, neighbors: [], seaNeighbors: [], seaDisplay: null }];
   })) as Record<string, Province>;
   const seaRoutes: { id: string; endpoints: [string, string] }[] = [];
 
@@ -88,16 +126,28 @@ function createMap(): Record<string, Province> {
 
     const id = seaRouteId(a, b);
     const midpoint = routeMidpoint(map[a], map[b]);
+    const display = seaDisplayDefinitions[id];
+    const fallbackName = `${map[a].name}–${map[b].name} Sea Route`;
     map[id] = {
       id,
-      name: `${map[a].name}–${map[b].name} Sea Route`,
+      name: display?.name ?? fallbackName,
       x: midpoint.x,
       y: midpoint.y,
       kind: "sea",
       supplyCenter: null,
       homeFactionId: null,
       neighbors: [],
-      seaNeighbors: []
+      seaNeighbors: [],
+      seaDisplay: {
+        name: display?.name ?? fallbackName.replace(/ Sea Route$/, " Sea"),
+        abbreviation: display?.abbreviation ?? id.replace(/^water_/, "").toUpperCase(),
+        labelAnchor: display?.labelAnchor ?? midpoint,
+        fleetAnchor: display?.fleetAnchor ?? midpoint,
+        lanePath: display?.lanePath ?? { bend: midpoint.y > 60 ? 34 : midpoint.y < 22 ? -28 : 24, wrap: Math.abs(map[a].x - map[b].x) > 50 },
+        priority: display?.priority ?? 1,
+        region: display?.region,
+        endpoints: [a, b]
+      }
     };
     addNeighbor(map, a, id, true);
     addNeighbor(map, id, b, true);
