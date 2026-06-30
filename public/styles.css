@@ -230,14 +230,18 @@ body.map-dedicated-open .topbar, body.map-dedicated-open .left-rail, body.map-de
 .sea-space-ring { fill: rgba(131, 240, 232, .74); }
 .territory-label,
 .sea-province-label { width: 104px; min-height: 23px; padding: 3px 5px; border-radius: 5px; background: rgba(8, 18, 29, .34); transform: translate(-50%, -50%) scale(calc(var(--label-screen-scale, 1) * var(--label-detail-scale, .72))); opacity: var(--label-opacity, .82); }
-.sea-province-label { width: 108px; color: rgba(197, 255, 250, .86); font-style: italic; }
+.sea-province-label { width: 118px; color: rgba(216, 255, 252, .96); font-style: italic; background: rgba(5, 21, 33, .52); border: 1px solid rgba(125, 231, 224, .2); box-shadow: 0 4px 14px rgba(0,0,0,.22); }
 .sea-fleet-anchor { position: absolute; left: calc(var(--fleet-x) - var(--x)); top: calc(var(--fleet-y) - var(--y)); transform: translate(-50%, -50%); }
 .territory-label:hover,
 .sea-province-label:hover { transform: translate(-50%, -50%) scale(calc(var(--label-screen-scale, 1) * var(--label-detail-scale, .72) * 1.16)); }
 .territory-name { font-size: 8.5px; color: #fff7e2; }
 .territory-name-full { grid-area: 1 / 1; opacity: 0; transform: translateY(2px) scale(.96); }
 .territory-name-short { grid-area: 1 / 1; opacity: 1; transform: translateY(0) scale(1); }
-.sea-province-label .territory-name { font-size: 8px; font-weight: 800; letter-spacing: .04em; }
+.sea-province-label .territory-name { font-size: 8.6px; font-weight: 900; letter-spacing: .045em; }
+.map-panel[data-map-mode="mobile-dedicated"] .sea-province-label,
+.map-panel[data-map-mode="spectator-1080p"] .sea-province-label { opacity: 1; width: 126px; background: rgba(5, 21, 33, .68); border-color: rgba(125, 231, 224, .34); }
+.map-panel[data-map-mode="mobile-dedicated"] .sea-province-label .territory-name,
+.map-panel[data-map-mode="spectator-1080p"] .sea-province-label .territory-name { font-size: 9.4px; }
 .center-token { width: 10px; height: 10px; box-shadow: 0 0 0 1px rgba(8, 18, 27, .95), 0 0 0 3px color-mix(in srgb, var(--province-color, #f4ead6) 44%, transparent); }
 .unit-token { z-index: 2; width: 16px; height: 16px; font-size: 9px; pointer-events: auto; }
 .unit-token.selected-unit { outline: 2px solid #ffe07a; outline-offset: 2px; box-shadow: 0 0 12px rgba(255,224,122,.88), 0 2px 4px rgba(0,0,0,.42); }
@@ -283,7 +287,7 @@ body.map-dedicated-open .topbar, body.map-dedicated-open .left-rail, body.map-de
 .map-zoom-strategic { --label-detail-scale: .96; --label-opacity: .9; }
 .map-zoom-strategic .territory-assets,
 .map-zoom-strategic .unit-token { opacity: .95; transform: scale(.92); }
-.map-zoom-strategic .sea-province-label { opacity: 0; transform: translate(-50%, -50%) scale(calc(var(--label-screen-scale, 1) * .68)); pointer-events: none; }
+.map-zoom-strategic .sea-province-label { opacity: .72; transform: translate(-50%, -50%) scale(calc(var(--label-screen-scale, 1) * .82)); pointer-events: auto; }
 .map-zoom-strategic .route-sea-lane { opacity: .18; }
 .map-zoom-strategic .sea-space { opacity: .72; transform: scale(.86); }
 .map-zoom-strategic .map-inspector { opacity: 0; transform: scale(.96); pointer-events: none; }

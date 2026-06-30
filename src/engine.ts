@@ -59,26 +59,26 @@ const provinceDefinitions: ProvinceDefinition[] = [
 ] as const;
 
 const connectionDefinitions: ConnectionDefinition[] = [
-  ["ena", "gla", "land"], ["gla", "cal", "land"], ["cal", "awc", "land"], ["ena", "mex", "land"], ["cal", "mex", "land"], ["mex", "yuc", "land"], ["yuc", "pan", "land"], ["pan", "car", "sea"], ["car", "ena", "sea"], ["pan", "and", "land"], ["pan", "ama", "land"],
-  ["and", "ama", "land"], ["ama", "bra", "land"], ["bra", "pat", "land"], ["and", "pat", "land"], ["car", "bra", "sea"],
-  ["bri", "weu", "sea"], ["bri", "sca", "sea"], ["weu", "ceu", "land"], ["weu", "ibe", "land"], ["ceu", "sca", "land"], ["ceu", "eeu", "land"], ["ceu", "bal", "land"], ["eeu", "bal", "land"], ["bal", "ana", "land"], ["ana", "lev", "land"], ["eeu", "ste", "land"],
-  ["ibe", "mag", "sea"], ["mag", "lib", "land"], ["lib", "egy", "land"], ["mag", "waf", "land"], ["waf", "con", "land"], ["con", "eaf", "land"], ["con", "cap", "land"], ["egy", "lev", "land"], ["egy", "eaf", "land"], ["lev", "ara", "land"], ["lev", "per", "land"], ["ara", "per", "land"], ["ara", "eaf", "sea"], ["eaf", "cap", "land"], ["mag", "egy", "sea"],
-  ["per", "ind", "land"], ["per", "cas", "land"], ["ind", "cas", "land"], ["ind", "sea", "land"], ["sea", "chi", "land"], ["sea", "mal", "land"], ["chi", "mon", "land"], ["chi", "man", "land"], ["man", "jak", "sea"], ["mon", "sib", "land"], ["mon", "cas", "land"], ["ste", "cas", "land"], ["ste", "sib", "land"], ["sib", "awc", "sea"], ["sib", "jak", "sea"],
+  ["ena", "gla", "land"], ["gla", "cal", "land"], ["gla", "awc", "land"], ["cal", "awc", "land"], ["ena", "mex", "land"], ["ena", "yuc", "land"], ["cal", "mex", "land"], ["gla", "mex", "land"], ["mex", "yuc", "land"], ["mex", "car", "land"], ["yuc", "pan", "land"], ["yuc", "car", "land"], ["pan", "car", "sea"], ["car", "ena", "sea"], ["pan", "and", "land"], ["pan", "ama", "land"],
+  ["and", "ama", "land"], ["ama", "bra", "land"], ["ama", "pat", "land"], ["bra", "pat", "land"], ["and", "pat", "land"], ["car", "bra", "sea"],
+  ["bri", "weu", "sea"], ["bri", "sca", "sea"], ["weu", "ceu", "land"], ["weu", "ibe", "land"], ["ceu", "sca", "land"], ["sca", "eeu", "land"], ["ceu", "eeu", "land"], ["ceu", "bal", "land"], ["weu", "bal", "land"], ["ibe", "bal", "land"], ["eeu", "bal", "land"], ["eeu", "ana", "land"], ["bal", "ana", "land"], ["ana", "lev", "land"], ["ana", "per", "land"], ["eeu", "ste", "land"],
+  ["ibe", "mag", "sea"], ["mag", "lib", "land"], ["lib", "egy", "land"], ["mag", "waf", "land"], ["mag", "con", "land"], ["lib", "waf", "land"], ["lib", "con", "land"], ["lib", "lev", "land"], ["waf", "con", "land"], ["con", "eaf", "land"], ["con", "cap", "land"], ["egy", "lev", "land"], ["egy", "eaf", "land"], ["lev", "ara", "land"], ["lev", "per", "land"], ["ara", "per", "land"], ["ara", "eaf", "sea"], ["eaf", "cap", "land"], ["mag", "egy", "sea"],
+  ["per", "ind", "land"], ["per", "cas", "land"], ["ind", "cas", "land"], ["ind", "chi", "land"], ["ind", "sea", "land"], ["sea", "chi", "land"], ["sea", "mal", "land"], ["chi", "mon", "land"], ["chi", "cas", "land"], ["chi", "man", "land"], ["man", "jak", "sea"], ["mon", "sib", "land"], ["mon", "cas", "land"], ["mon", "ste", "land"], ["ste", "cas", "land"], ["cas", "sib", "land"], ["ste", "sib", "land"], ["sib", "man", "land"], ["sib", "awc", "sea"], ["sib", "jak", "sea"],
   ["mal", "png", "sea"], ["png", "aus", "sea"], ["mal", "aus", "sea"], ["cap", "aus", "sea"], ["mal", "ind", "sea"], ["mal", "sea", "sea"]
 ] as const;
 
 
 const seaDisplayDefinitions: Record<string, SeaDisplayDefinition> = {
-  water_awc_sib: { name: "Bering Sea", abbreviation: "BER", priority: 2, region: "North Pacific", lanePath: { bend: -70, wrap: true } },
-  water_car_ena: { name: "Western Atlantic", abbreviation: "WAT", priority: 3, region: "Atlantic" },
-  water_car_pan: { name: "Caribbean Sea", abbreviation: "CAR", priority: 4, region: "Atlantic" },
-  water_bra_car: { name: "South Atlantic", abbreviation: "SAT", priority: 3, region: "Atlantic" },
+  water_awc_sib: { name: "Bering Sea", abbreviation: "BER", labelAnchor: { x: 98.2, y: 12.4 }, fleetAnchor: { x: 1.8, y: 12.4 }, priority: 2, region: "North Pacific", lanePath: { bend: -70, wrap: true } },
+  water_car_ena: { name: "Western Atlantic", abbreviation: "WAT", labelAnchor: { x: 29.7, y: 30.8 }, fleetAnchor: { x: 29.2, y: 29.2 }, priority: 3, region: "Atlantic" },
+  water_car_pan: { name: "Caribbean Sea", abbreviation: "CAR", labelAnchor: { x: 29.2, y: 42.6 }, fleetAnchor: { x: 29.2, y: 43.9 }, priority: 4, region: "Atlantic" },
+  water_bra_car: { name: "South Atlantic", abbreviation: "SAT", labelAnchor: { x: 38.7, y: 56.8 }, fleetAnchor: { x: 37.1, y: 54.0 }, priority: 3, region: "Atlantic" },
   water_bri_sca: { name: "North Sea", abbreviation: "NTH", priority: 5, region: "Atlantic" },
   water_bri_weu: { name: "English Channel", abbreviation: "ENG", priority: 5, region: "Atlantic" },
   water_ibe_mag: { name: "Western Mediterranean", abbreviation: "WMS", priority: 4, region: "Mediterranean" },
   water_mag_egy: { name: "Eastern Mediterranean", abbreviation: "EMS", priority: 4, region: "Mediterranean" },
   water_ara_eaf: { name: "Red Sea", abbreviation: "RED", priority: 4, region: "Indian Ocean" },
-  water_cap_aus: { name: "Indian Ocean", abbreviation: "INDO", priority: 5, region: "Indian Ocean" },
+  water_cap_aus: { name: "Indian Ocean", abbreviation: "INDO", labelAnchor: { x: 65.0, y: 83.4 }, fleetAnchor: { x: 65.0, y: 79.5 }, priority: 5, region: "Indian Ocean" },
   water_ind_mal: { name: "Andaman Sea", abbreviation: "AND", priority: 4, region: "Indian Ocean" },
   water_mal_sea: { name: "Malacca Strait", abbreviation: "MAL", priority: 5, region: "Indo-Pacific" },
   water_aus_mal: { name: "Timor Sea", abbreviation: "TIM", priority: 4, region: "Indo-Pacific" },

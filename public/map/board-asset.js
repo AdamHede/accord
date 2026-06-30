@@ -792,8 +792,8 @@ export const BOARD_PROVINCE_METADATA = {
     },
     "label": {
       "anchor": {
-        "x": 31.11,
-        "y": 88.89
+        "x": 29.0,
+        "y": 80.9
       },
       "variants": {
         "full": "Patagonia & Southern Cone",
@@ -1404,8 +1404,8 @@ export const BOARD_PROVINCE_METADATA = {
     },
     "label": {
       "anchor": {
-        "x": 56.94,
-        "y": 77.78
+        "x": 55.8,
+        "y": 70.8
       },
       "variants": {
         "full": "Southern Africa & Cape",
@@ -1812,8 +1812,8 @@ export const BOARD_PROVINCE_METADATA = {
     },
     "label": {
       "anchor": {
-        "x": 87.1,
-        "y": 74.2
+        "x": 86.6,
+        "y": 69.4
       },
       "variants": {
         "full": "Australia",
