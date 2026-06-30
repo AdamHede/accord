@@ -22,3 +22,16 @@ describe("board asset metadata", () => {
     }
   });
 });
+
+
+describe("client map rendering", () => {
+  it("renders the polygon map without the land adjacency route overlay", async () => {
+    const fs = await import("node:fs/promises");
+    const app = await fs.readFile(new URL("../public/app.js", import.meta.url), "utf8");
+    const index = await fs.readFile(new URL("../public/index.html", import.meta.url), "utf8");
+
+    expect(app).not.toContain("renderRouteLayer(model)");
+    expect(app).not.toContain("legend-route");
+    expect(index).toContain("Territory polygons are the legal land map");
+  });
+});

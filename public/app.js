@@ -898,18 +898,6 @@ function renderTerritoryLayer(model) {
   return `<svg class="territory-layer" ${mapLayerAttributes("territory", model)} viewBox="0 0 ${BOARD_WIDTH} ${BOARD_HEIGHT}" preserveAspectRatio="none" aria-hidden="true"><defs><filter id="territory-shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="6" stdDeviation="7" flood-color="#06101a" flood-opacity=".38"/></filter><clipPath id="world-land-clip">${worldLandMarkup}</clipPath></defs><g filter="url(#territory-shadow)" clip-path="url(#world-land-clip)">${territoryLayer}</g><g class="macro-borders">${macroBorders}</g><g class="real-coastline">${worldLandMarkup}</g></svg>`;
 }
 
-function renderRouteLayer(model) {
-  const landRoutes = [];
-  for (const place of game.map) {
-    if (place.kind === "sea") continue;
-    for (const neighbor of place.neighbors) {
-      const neighborPlace = model.provinceById[neighbor];
-      if (neighborPlace?.kind !== "sea" && place.id < neighbor) landRoutes.push(`<path class="route route-land" d="${routePath(place, neighborPlace)}"/>`);
-    }
-  }
-  return `<svg class="route-layer" ${mapLayerAttributes("routes", model)} viewBox="0 0 ${BOARD_WIDTH} ${BOARD_HEIGHT}" preserveAspectRatio="none" aria-hidden="true"><g class="land-routes">${landRoutes.join("")}</g></svg>`;
-}
-
 function renderSeaProvinceLayer(model) {
   const seaRoutes = [];
   const seaHitAreas = [];
@@ -1036,7 +1024,6 @@ function renderMap() {
   map.innerHTML = [
     renderBaseWorldLayer(model),
     renderTerritoryLayer(model),
-    renderRouteLayer(model),
     renderSeaProvinceLayer(model),
     renderLabelLayer(model),
     renderUnitLayer(model),
@@ -1060,7 +1047,7 @@ function renderScores() {
   }).join("");
   $("#scores").innerHTML = scores;
   const occupiedFactions = game.factions.filter((choice) => game.players.some((candidate) => candidate.faction === choice.id));
-  $("#legend").innerHTML = `<span class="legend-item legend-rule"><i class="legend-node home"></i>Home center</span><span class="legend-item legend-rule"><i class="legend-node neutral"></i>Neutral center</span><span class="legend-item legend-rule"><i class="legend-node buffer"></i>Ordinary territory</span><span class="legend-item legend-rule"><i class="legend-node sea"></i>Water province</span><span class="legend-item legend-rule"><i class="legend-route"></i>Naval adjacency aid</span>${occupiedFactions.map((choice) => `<span class="legend-item"><i class="legend-swatch" style="background:${choice.color}"></i>${escapeHtml(choice.name)}</span>`).join("")}`;
+  $("#legend").innerHTML = `<span class="legend-item legend-rule"><i class="legend-node home"></i>Home center</span><span class="legend-item legend-rule"><i class="legend-node neutral"></i>Neutral center</span><span class="legend-item legend-rule"><i class="legend-node buffer"></i>Ordinary territory</span><span class="legend-item legend-rule"><i class="legend-node sea"></i>Water province</span>${occupiedFactions.map((choice) => `<span class="legend-item"><i class="legend-swatch" style="background:${choice.color}"></i>${escapeHtml(choice.name)}</span>`).join("")}`;
 }
 
 function renderChat() {
