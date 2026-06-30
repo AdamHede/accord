@@ -1,7 +1,7 @@
-import { WORLD_LAND_PATHS } from "./world-land-paths.js";
+import { BOARD_ASSET, BOARD_PROVINCE_METADATA, BOARD_SEA_PROVINCE_METADATA } from "./map/board-asset.js";
 
 const sessionKey = "accord-session-v1";
-const worldLandMarkup = WORLD_LAND_PATHS.map((path) => `<path d="${path}"></path>`).join("");
+const worldLandMarkup = BOARD_ASSET.geometry.worldLandPaths.map((path) => `<path d="${path}"></path>`).join("");
 let session = readSession();
 let game = null;
 let socket = null;
@@ -343,25 +343,14 @@ function renderOrderPanel() {
   $("#commit-orders")?.addEventListener("click", () => send({ type: "orders", orders: Object.values(drafts) }));
 }
 
-const BOARD_WIDTH = 1200;
-const BOARD_HEIGHT = 620;
+const BOARD_WIDTH = BOARD_ASSET.board.width;
+const BOARD_HEIGHT = BOARD_ASSET.board.height;
 
-const labelAnchors = {
-  gla: [25.0, 22.0], ena: [29.2, 25.1], cal: [16.2, 27.8], mex: [21.3, 38.4], yuc: [25.2, 41.3], pan: [27.6, 48.1], car: [30.5, 41.4],
-  bri: [48.1, 14.7], weu: [49.7, 20.6], ceu: [53.6, 17.1], sca: [55.4, 8.1], ibe: [47.9, 26.7], bal: [56.2, 23.5], ana: [60.1, 26.5], eeu: [59.2, 17.4],
-  mag: [48.4, 32.5], lib: [54.1, 33.3], egy: [58.2, 36.3], lev: [60.7, 31.6], ara: [62.4, 39.5], per: [65.2, 31.7], eaf: [62.3, 52.1],
-  ind: [71.2, 39.7], cas: [68.2, 22.8], ste: [67.1, 17.1], mon: [78.5, 21.0], chi: [80.0, 30.0], man: [84.9, 22.5], jak: [88.8, 27.2],
-  sea: [78.8, 45.6], mal: [80.8, 57.4], png: [90.8, 58.5], aus: [87.1, 74.2]
-};
+const labelAnchors = Object.fromEntries(Object.values(BOARD_PROVINCE_METADATA).map((metadata) => [metadata.id, [metadata.label.anchor.x, metadata.label.anchor.y]]));
 
-const territoryRegions = [
-  { ids: ["awc", "cal", "gla", "ena", "mex", "yuc", "pan", "car"], polygon: [[36, 72], [92, 38], [170, 48], [242, 78], [322, 118], [392, 165], [383, 232], [354, 290], [316, 324], [262, 282], [214, 274], [160, 292], [104, 253], [58, 201], [38, 143]] },
-  { ids: ["ama", "bra", "and", "pat"], polygon: [[240, 292], [330, 292], [390, 330], [455, 390], [444, 470], [365, 566], [320, 584], [285, 512], [262, 438], [238, 356]] },
-  { ids: ["bri", "weu", "ceu", "sca", "ibe", "bal", "ana", "eeu"], polygon: [[482, 112], [524, 68], [612, 46], [688, 42], [764, 82], [790, 145], [742, 195], [664, 205], [580, 188], [514, 154]] },
-  { ids: ["mag", "lib", "waf", "con", "egy", "lev", "ara", "per", "eaf", "cap"], polygon: [[520, 202], [620, 174], [715, 178], [800, 196], [838, 272], [800, 354], [737, 510], [655, 492], [580, 410], [520, 306]] },
-  { ids: ["ind", "cas", "ste", "sib", "mon", "chi", "man", "jak"], polygon: [[742, 98], [854, 62], [940, 50], [1052, 70], [1132, 118], [1122, 176], [1058, 222], [974, 238], [880, 256], [805, 218], [754, 162]] },
-  { ids: ["sea", "mal", "png", "aus"], polygon: [[888, 264], [950, 236], [1016, 266], [1092, 318], [1134, 382], [1110, 494], [1026, 548], [950, 520], [906, 440], [884, 344]] }
-];
+const territoryRegions = BOARD_ASSET.regions.map((region) => ({ ids: region.ids, polygon: region.polygon }));
+
+const defaultLandLabels = Object.fromEntries(Object.values(BOARD_PROVINCE_METADATA).map((metadata) => [metadata.id, metadata.label.variants.short]));
 
 let territoryPathCache = null;
 
@@ -450,15 +439,21 @@ function provinceTypeLabel(place, provinceById = null) {
   const type = provinceType(place, provinceById);
   return type === "water" ? "water province" : `${type} land province`;
 }
-const defaultLandLabels = {
-  awc: "Alaska", ena: "E. N. America", yuc: "Yucatán", car: "Carib.", pat: "Patagonia", bri: "Britain", weu: "W. Europe", ceu: "C. Europe", sca: "Scand.", eeu: "E. Europe", lib: "Libya", egy: "Egypt", ara: "Arabia", per: "Persia", eaf: "E. Africa", cap: "Cape", cas: "C. Asia", ste: "Steppe", jak: "Japan/Korea", sea: "S.E. Asia", mal: "Malacca", png: "New Guinea"
-};
 
 function labelName(place) {
   return defaultLandLabels[place.id] ?? place.name;
 }
 
-function seaDisplay(place) { return place?.seaDisplay ?? null; }
+function seaDisplay(place) {
+  const metadata = place?.kind === "sea" ? BOARD_SEA_PROVINCE_METADATA[place.id] : null;
+  if (!metadata) return place?.seaDisplay ?? null;
+  return {
+    ...(place?.seaDisplay ?? {}),
+    ...metadata.display,
+    endpoints: metadata.geometry.endpoints,
+    lanePath: metadata.geometry.lanePath ?? place?.seaDisplay?.lanePath
+  };
+}
 function seaName(place) {
   return seaDisplay(place)?.name ?? place.name.replace(/ Sea Route$/, " Sea");
 }
