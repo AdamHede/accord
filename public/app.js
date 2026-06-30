@@ -13,6 +13,7 @@ let toastTimer = null;
 let screenWakeLock = null;
 const mapViewport = { scale: 1, x: 0, y: 0, pointers: new Map(), lastDistance: 0, suppressClick: false, mode: "embedded", cameraReady: false, cameraPreset: "fitWorld", insets: { top: 0, right: 0, bottom: 0, left: 0 } };
 let explicitMapMode = null;
+const mapRenderState = { assetKey: null, interactionsReady: false };
 const MAP_DISPLAY_MODES = {
   embedded: { minScale: 0.9, maxScale: 3.2, initialScale: 1 },
   "mobile-dedicated": { minScale: 0.95, maxScale: 4, initialScale: 1.25 },
@@ -657,6 +658,8 @@ function installMapViewportInteractions() {
   if (!viewport || viewport.dataset.zoomReady === "true") return;
   viewport.dataset.zoomReady = "true";
   viewport.addEventListener("pointerdown", (event) => {
+    const mode = currentMapDisplayMode(viewport);
+    viewport.dataset.mapMode = mode;
     if (!event.isPrimary && event.pointerType === "mouse") return;
     viewport.setPointerCapture?.(event.pointerId);
     mapViewport.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
@@ -719,19 +722,29 @@ function openDedicatedMap() { explicitMapMode = "mobile-dedicated"; updateMapDis
 function closeDedicatedMap() { explicitMapMode = null; updateMapDisplayMode(); setMapCamera(defaultMapCameraPreset(), { preserveMode: true }); }
 
 function installMapInteractions(map) {
-  map.querySelectorAll("[data-province]").forEach((element) => element.addEventListener("click", (event) => {
-    event.stopPropagation();
-    selectedProvinceId = element.dataset.province;
-    selectedUnitId = null;
+  if (!map || mapRenderState.interactionsReady) return;
+  mapRenderState.interactionsReady = true;
+  map.addEventListener("click", (event) => {
+    if (mapViewport.suppressClick) return;
+    const unitElement = event.target.closest?.("[data-unit]");
+    if (unitElement && map.contains(unitElement)) {
+      event.stopPropagation();
+      selectedUnitId = unitElement.dataset.unit;
+      selectedProvinceId = province(activeUnits().find((unit) => unit.id === selectedUnitId)?.provinceId)?.id ?? null;
+      renderMap();
+      return;
+    }
+    const provinceElement = event.target.closest?.("[data-province]");
+    if (provinceElement && map.contains(provinceElement)) {
+      event.stopPropagation();
+      selectedProvinceId = provinceElement.dataset.province;
+      selectedUnitId = null;
+      renderMap();
+      return;
+    }
+    clearMapSelection();
     renderMap();
-  }));
-  map.querySelectorAll("[data-unit]").forEach((element) => element.addEventListener("click", (event) => {
-    event.stopPropagation();
-    selectedUnitId = element.dataset.unit;
-    selectedProvinceId = province(activeUnits().find((unit) => unit.id === selectedUnitId)?.provinceId)?.id ?? null;
-    renderMap();
-  }));
-  map.addEventListener("click", () => { clearMapSelection(); renderMap(); }, { once: true });
+  });
 }
 function placeColor(place, ownerFaction) {
   const homeFaction = faction(place.homeFactionId) ?? game.factions.find((choice) => choice.homes.includes(place.id));
@@ -880,6 +893,39 @@ function renderBaseWorldLayer(model) {
   return worldArt().replace('class="world-art"', `class="world-art" ${mapLayerAttributes("base-world", model)}`);
 }
 
+function mapAssetKey() {
+  return JSON.stringify({
+    board: BOARD_ASSET.geometry.worldLandPaths,
+    provinces: game.map.map((place) => [place.id, place.kind, place.x, place.y, place.neighbors])
+  });
+}
+
+function ensureMapLayerContainers(map) {
+  if (!map || map.dataset.layersReady === "true") return;
+  map.dataset.layersReady = "true";
+  map.innerHTML = [
+    `<div class="map-base-layer" data-layer-container="base"></div>`,
+    `<div class="map-territory-layer" data-layer-container="territory"></div>`,
+    `<div class="map-route-layer" data-layer-container="route"></div>`,
+    `<div class="map-label-layer" data-layer-container="label"></div>`,
+    `<div class="map-unit-layer" data-layer-container="unit"></div>`,
+    `<div class="map-order-layer" data-layer-container="order"></div>`,
+    `<div class="map-inspector-layer" data-layer-container="inspector"></div>`
+  ].join("");
+}
+
+function replaceLayerContents(map, containerName, html) {
+  const layer = map.querySelector(`[data-layer-container="${containerName}"]`);
+  if (layer) layer.innerHTML = html;
+}
+
+function updateMapLayerAttributes(map, model) {
+  map.querySelectorAll("[data-layer-container]").forEach((layer) => {
+    layer.dataset.displayMode = model.displayMode;
+    layer.dataset.zoomMode = model.zoomMode;
+  });
+}
+
 function renderTerritoryLayer(model) {
   const territoryLayer = game.map.filter((place) => place.kind !== "sea").map((place) => {
     const metadata = model.ownershipByProvinceId[place.id] ?? {};
@@ -938,7 +984,7 @@ function renderLabelLayer(model) {
     const selected = model.selectedUnitId && model.legalTargetIds.has(place.id);
     return `<div class="territory-label province-label-${type} ${selected ? "selected-destination" : ""} ${model.plannedTargetIds.has(place.id) ? "planned-destination" : ""} ${model.selectedProvinceId === place.id ? "selected-province" : ""}" data-province="${place.id}" style="${style}" title="${escapeHtml(placeTitle(place, metadata.ownerFaction, model))}"><span class="territory-name territory-name-short">${escapeHtml(labelName(place))}</span><span class="territory-name territory-name-full">${escapeHtml(place.name)}</span>${center || units ? `<span class="territory-assets">${center}${units ? `<span class="unit-stack">${units}</span>` : ""}</span>` : ""}</div>`;
   }).join("");
-  return `<div class="map-label-layer" ${mapLayerAttributes("labels", model)}>${labels}</div>`;
+  return labels;
 }
 
 function renderUnitLayer(model) {
@@ -950,7 +996,7 @@ function renderUnitLayer(model) {
     const selected = model.selectedUnitId && model.legalTargetIds.has(place.id);
     return `<div class="sea-province-label ${selected ? "selected-destination" : ""} ${model.plannedTargetIds.has(place.id) ? "planned-destination" : ""} ${model.selectedProvinceId === place.id ? "selected-province" : ""}" data-province="${place.id}" style="${style}" title="${escapeHtml(placeTitle(place, null, model))}"><span class="territory-name territory-name-short">${escapeHtml(seaAbbreviation(place))}</span><span class="territory-name territory-name-full">${escapeHtml(seaName(place))}</span>${units ? `<span class="sea-fleet-anchor"><span class="unit-stack">${units}</span></span>` : ""}</div>`;
   }).join("");
-  return `<div class="map-unit-layer" ${mapLayerAttributes("units", model)}>${seaTokens}</div>`;
+  return seaTokens;
 }
 
 function renderOrderOverlayLayer(model) {
@@ -1014,22 +1060,29 @@ function renderOrderOverlayLayer(model) {
 }
 
 function renderInspectorLayer(model) {
-  return `<div class="map-inspector-layer" ${mapLayerAttributes("inspector", model)}>${model.selectedProvince ? renderProvinceInfo(model.selectedProvince, model) : ""}</div>`;
+  return model.selectedProvince ? renderProvinceInfo(model.selectedProvince, model) : "";
 }
 
 function renderMap() {
   if (!game) return;
   const map = $("#map");
   const model = buildMapViewModel();
-  map.innerHTML = [
-    renderBaseWorldLayer(model),
-    renderTerritoryLayer(model),
-    renderSeaProvinceLayer(model),
-    renderLabelLayer(model),
-    renderUnitLayer(model),
-    renderOrderOverlayLayer(model),
-    renderInspectorLayer(model)
-  ].join("");
+  ensureMapLayerContainers(map);
+  const assetKey = mapAssetKey();
+  updateMapLayerAttributes(map, model);
+  if (mapRenderState.assetKey !== assetKey) {
+    mapRenderState.assetKey = assetKey;
+    replaceLayerContents(map, "base", renderBaseWorldLayer(model));
+    replaceLayerContents(map, "territory", renderTerritoryLayer(model));
+    replaceLayerContents(map, "route", renderSeaProvinceLayer(model));
+  } else {
+    replaceLayerContents(map, "territory", renderTerritoryLayer(model));
+    replaceLayerContents(map, "route", renderSeaProvinceLayer(model));
+  }
+  replaceLayerContents(map, "label", renderLabelLayer(model));
+  replaceLayerContents(map, "unit", renderUnitLayer(model));
+  replaceLayerContents(map, "order", renderOrderOverlayLayer(model));
+  replaceLayerContents(map, "inspector", renderInspectorLayer(model));
   installMapInteractions(map);
   installCameraControls();
   installMapViewportInteractions();

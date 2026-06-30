@@ -63,15 +63,18 @@ textarea { min-height: 78px; resize: vertical; }
 .map { position: relative; width: 100%; min-height: 400px; transform-origin: 0 0; will-change: transform; aspect-ratio: 1200 / 620; overflow: hidden; background: radial-gradient(ellipse at 50% 42%, rgba(109, 173, 166, .24), transparent 43%), linear-gradient(145deg, #245f6b, #18475d 51%, #103447); }
 .map::before { content: ""; position: absolute; z-index: 6; inset: 0; pointer-events: none; box-shadow: inset 0 0 90px rgba(3, 12, 24, .48); }
 .map::after { content: ""; position: absolute; z-index: 5; inset: 0; pointer-events: none; opacity: .18; background-image: radial-gradient(rgba(255,255,255,.36) .62px, transparent .8px); background-size: 13px 13px; mix-blend-mode: soft-light; }
-.world-art, .territory-layer, .route-layer, .sea-province-layer, .map-label-layer, .map-unit-layer, .map-order-overlay-layer, .map-inspector-layer { position: absolute; inset: 0; width: 100%; height: 100%; }
+.map-base-layer, .map-territory-layer, .map-route-layer, .map-label-layer, .map-unit-layer, .map-order-layer, .map-inspector-layer, .world-art, .territory-layer, .route-layer, .sea-province-layer, .map-order-overlay-layer { position: absolute; inset: 0; width: 100%; height: 100%; }
+.map-base-layer { z-index: 0; }
+.map-territory-layer { z-index: 1; }
+.map-route-layer { z-index: 3; pointer-events: none; }
+.map-label-layer { z-index: 4; pointer-events: none; }
+.map-unit-layer { z-index: 5; pointer-events: none; }
+.map-order-layer { z-index: 6; pointer-events: none; }
+.map-inspector-layer { z-index: 9; pointer-events: none; }
 .world-art { z-index: 0; }
 .territory-layer { z-index: 1; overflow: visible; }
 .route-layer { z-index: 2; overflow: visible; pointer-events: none; }
 .sea-province-layer { z-index: 3; overflow: visible; pointer-events: none; }
-.map-label-layer { z-index: 4; pointer-events: none; }
-.map-unit-layer { z-index: 5; pointer-events: none; }
-.map-order-overlay-layer { z-index: 6; pointer-events: none; }
-.map-inspector-layer { z-index: 9; pointer-events: none; }
 .real-land-base path { fill: rgba(70, 91, 69, .26); stroke: rgba(230, 224, 180, .22); stroke-width: .8; vector-effect: non-scaling-stroke; }
 .real-coastline path { fill: none; stroke: rgba(246, 237, 194, .78); stroke-width: 1.15; vector-effect: non-scaling-stroke; pointer-events: none; }
 .ocean-lines path { stroke: rgba(185, 233, 224, .16); stroke-width: 2; stroke-dasharray: 7 12; }
