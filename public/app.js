@@ -476,9 +476,11 @@ function selectedLegalTargetIds() {
 }
 
 function draftTargetIds() {
-  const targets = selectedLegalTargetIds();
+  const targets = new Set();
   for (const order of draftOrders()) {
     if ((order.type === "move" || order.type === "retreat") && order.destination) targets.add(order.destination);
+    if (order.type === "support" && order.destination) targets.add(order.destination);
+    if (order.type === "convoy" && order.destination) targets.add(order.destination);
     if (order.type === "build" && order.provinceId) targets.add(order.provinceId);
   }
   return targets;
@@ -748,6 +750,61 @@ function worldArt() {
   </svg>`;
 }
 
+function orderUnitFor(order) {
+  return order.unitId ? game.units.find((unit) => unit.id === order.unitId) ?? null : null;
+}
+
+function orderProvinceFor(order, provinceById) {
+  const unit = orderUnitFor(order);
+  if (unit?.provinceId) return provinceById[unit.provinceId] ?? null;
+  if (order.provinceId) return provinceById[order.provinceId] ?? null;
+  return null;
+}
+
+function orderCurvePath(fromPlace, toPlace, offset = 0) {
+  const from = boardPoint(fromPlace);
+  const to = boardPoint(toPlace);
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const length = Math.hypot(dx, dy) || 1;
+  const midX = (from.x + to.x) / 2;
+  const midY = (from.y + to.y) / 2;
+  const bend = offset || Math.min(64, Math.max(24, length * 0.16));
+  const controlX = midX + (-dy / length) * bend;
+  const controlY = midY + (dx / length) * bend;
+  return `M ${from.x.toFixed(1)} ${from.y.toFixed(1)} Q ${controlX.toFixed(1)} ${controlY.toFixed(1)} ${to.x.toFixed(1)} ${to.y.toFixed(1)}`;
+}
+
+function convoyRoutePlaces(order, provinceById) {
+  const unit = orderUnitFor(order);
+  if (!unit || order.type !== "move" || !order.viaConvoy || !order.destination) return [];
+  const destination = provinceById[order.destination];
+  if (!destination) return [];
+  const convoyOrders = draftOrders().filter((candidate) => candidate.type === "convoy" && candidate.targetUnitId === unit.id && candidate.destination === order.destination);
+  const seas = convoyOrders.map((candidate) => orderProvinceFor(candidate, provinceById)).filter(Boolean);
+  return [provinceById[unit.provinceId], ...seas, destination].filter(Boolean);
+}
+
+function buildOrderOverlayViewModel(plannedOrders, currentOrders, provinceById) {
+  const orderKeys = new Set();
+  const visibleOrders = [];
+  const pushOrder = (order, source) => {
+    const key = `${order.unitId ?? order.provinceId ?? "slot"}:${order.type}:${order.destination ?? ""}:${order.targetUnitId ?? ""}:${order.unitType ?? ""}`;
+    if (orderKeys.has(key)) return;
+    orderKeys.add(key);
+    const origin = orderProvinceFor(order, provinceById);
+    const unit = orderUnitFor(order);
+    const destination = order.destination ? provinceById[order.destination] ?? null : order.provinceId ? provinceById[order.provinceId] ?? null : null;
+    const targetUnit = order.targetUnitId ? game.units.find((candidate) => candidate.id === order.targetUnitId) ?? null : null;
+    const target = targetUnit ? provinceById[targetUnit.provinceId] ?? null : null;
+    const route = convoyRoutePlaces(order, provinceById);
+    visibleOrders.push({ order, source, origin, destination, target, unit, targetUnit, route });
+  };
+  for (const order of currentOrders) pushOrder(order, "committed");
+  for (const order of plannedOrders) pushOrder(order, "draft");
+  return visibleOrders;
+}
+
 function buildMapViewModel() {
   const provinceById = Object.fromEntries(game.map.map((place) => [place.id, place]));
   const territories = territoryPaths(provinceById);
@@ -765,6 +822,7 @@ function buildMapViewModel() {
   const plannedTargetIds = draftTargetIds();
   const plannedOrders = draftOrders();
   const currentOrders = game.myOrders ?? [];
+  const orderOverlays = buildOrderOverlayViewModel(plannedOrders, currentOrders, provinceById);
   const ownershipByProvinceId = Object.fromEntries(game.map.map((place) => {
     const owner = player(game.control[place.id]);
     const ownerFaction = faction(owner?.faction);
@@ -785,7 +843,8 @@ function buildMapViewModel() {
     legalTargetIds,
     plannedTargetIds,
     plannedOrders,
-    currentOrders
+    currentOrders,
+    orderOverlays
   };
 }
 
@@ -821,7 +880,8 @@ function renderTerritoryLayer(model) {
     const classes = ["territory", `territory-${place.kind}`, `province-${type}`];
     if (metadata.color) classes.push("has-color");
     if (metadata.ownerFaction) classes.push("controlled");
-    if (model.plannedTargetIds.has(place.id)) classes.push("selected-destination");
+    if (model.plannedTargetIds.has(place.id)) classes.push("planned-destination");
+    if (model.selectedUnitId && model.legalTargetIds.has(place.id)) classes.push("selected-destination");
     if (model.selectedProvinceId === place.id) classes.push("selected-province");
     if (model.selectedUnitId && !model.legalTargetIds.has(place.id)) classes.push("selection-muted");
     const style = metadata.color ? ` style="--province-color:${metadata.color}"` : "";
@@ -848,9 +908,10 @@ function renderRouteLayer(model) {
     const [a, b] = endpoints.map((id) => model.provinceById[id]);
     if (!a || !b) continue;
     const point = boardPoint(place);
-    const selected = model.plannedTargetIds.has(place.id);
-    seaRoutes.push(`<path class="route route-sea-lane ${selected ? "selected-destination" : ""} ${model.selectedUnitId ? "planning-route" : ""}" d="${seaLanePath(place, a, b)}"><title>${escapeHtml(placeTitle(place, null, model))}</title></path>`);
-    seaMarkers.push(`<g class="sea-space ${selected ? "selected-destination" : ""} ${model.selectedProvinceId === place.id ? "selected-province" : ""}" data-province="${place.id}" transform="translate(${point.x.toFixed(1)} ${point.y.toFixed(1)})"><title>${escapeHtml(placeTitle(place, null, model))}</title><circle class="sea-space-halo" r="18"/><circle class="sea-space-ring" r="7"/></g>`);
+    const selected = model.selectedUnitId && model.legalTargetIds.has(place.id);
+    const planned = model.plannedTargetIds.has(place.id);
+    seaRoutes.push(`<path class="route route-sea-lane ${selected ? "selected-destination" : ""} ${planned ? "planned-destination" : ""} ${model.selectedUnitId ? "planning-route" : ""}" d="${seaLanePath(place, a, b)}"><title>${escapeHtml(placeTitle(place, null, model))}</title></path>`);
+    seaMarkers.push(`<g class="sea-space ${selected ? "selected-destination" : ""} ${planned ? "planned-destination" : ""} ${model.selectedProvinceId === place.id ? "selected-province" : ""}" data-province="${place.id}" transform="translate(${point.x.toFixed(1)} ${point.y.toFixed(1)})"><title>${escapeHtml(placeTitle(place, null, model))}</title><circle class="sea-space-halo" r="18"/><circle class="sea-space-ring" r="7"/></g>`);
   }
   return `<svg class="route-layer" ${mapLayerAttributes("routes", model)} viewBox="0 0 ${BOARD_WIDTH} ${BOARD_HEIGHT}" preserveAspectRatio="none" aria-hidden="true"><g class="sea-lanes">${seaRoutes.join("")}</g><g class="land-routes">${landRoutes.join("")}</g><g class="sea-spaces">${seaMarkers.join("")}</g></svg>`;
 }
@@ -874,7 +935,8 @@ function renderLabelLayer(model) {
     const [labelX, labelY] = labelAnchors[place.id] ?? [place.x, place.y];
     const style = `--x:${labelX}%;--y:${labelY}%;${metadata.color ? `--province-color:${metadata.color};` : ""}`;
     const type = provinceType(place, model.provinceById);
-    return `<div class="territory-label province-label-${type} ${model.plannedTargetIds.has(place.id) ? "selected-destination" : ""} ${model.selectedProvinceId === place.id ? "selected-province" : ""}" data-province="${place.id}" style="${style}" title="${escapeHtml(placeTitle(place, metadata.ownerFaction, model))}"><span class="territory-name territory-name-short">${escapeHtml(labelName(place))}</span><span class="territory-name territory-name-full">${escapeHtml(place.name)}</span>${center || units ? `<span class="territory-assets">${center}${units ? `<span class="unit-stack">${units}</span>` : ""}</span>` : ""}</div>`;
+    const selected = model.selectedUnitId && model.legalTargetIds.has(place.id);
+    return `<div class="territory-label province-label-${type} ${selected ? "selected-destination" : ""} ${model.plannedTargetIds.has(place.id) ? "planned-destination" : ""} ${model.selectedProvinceId === place.id ? "selected-province" : ""}" data-province="${place.id}" style="${style}" title="${escapeHtml(placeTitle(place, metadata.ownerFaction, model))}"><span class="territory-name territory-name-short">${escapeHtml(labelName(place))}</span><span class="territory-name territory-name-full">${escapeHtml(place.name)}</span>${center || units ? `<span class="territory-assets">${center}${units ? `<span class="unit-stack">${units}</span>` : ""}</span>` : ""}</div>`;
   }).join("");
   return `<div class="map-label-layer" ${mapLayerAttributes("labels", model)}>${labels}</div>`;
 }
@@ -883,13 +945,70 @@ function renderUnitLayer(model) {
   const seaTokens = game.map.filter((place) => place.kind === "sea").map((place) => {
     const units = renderUnitTokens(place, model);
     const style = `--x:${place.x}%;--y:${place.y}%;`;
-    return `<div class="sea-province-label ${model.plannedTargetIds.has(place.id) ? "selected-destination" : ""} ${model.selectedProvinceId === place.id ? "selected-province" : ""}" data-province="${place.id}" style="${style}" title="${escapeHtml(placeTitle(place, null, model))}"><span class="territory-name">${escapeHtml(seaName(place))}</span>${units ? `<span class="unit-stack">${units}</span>` : ""}</div>`;
+    const selected = model.selectedUnitId && model.legalTargetIds.has(place.id);
+    return `<div class="sea-province-label ${selected ? "selected-destination" : ""} ${model.plannedTargetIds.has(place.id) ? "planned-destination" : ""} ${model.selectedProvinceId === place.id ? "selected-province" : ""}" data-province="${place.id}" style="${style}" title="${escapeHtml(placeTitle(place, null, model))}"><span class="territory-name">${escapeHtml(seaName(place))}</span>${units ? `<span class="unit-stack">${units}</span>` : ""}</div>`;
   }).join("");
   return `<div class="map-unit-layer" ${mapLayerAttributes("units", model)}>${seaTokens}</div>`;
 }
 
 function renderOrderOverlayLayer(model) {
-  return `<div class="map-order-overlay-layer" ${mapLayerAttributes("orders", model)} data-planned-orders="${model.plannedOrders.length}" data-current-orders="${model.currentOrders.length}"></div>`;
+  const paths = [];
+  const glyphs = [];
+  const labels = [];
+  const line = (classes, d, title) => paths.push(`<path class="${classes}" d="${d}"><title>${escapeHtml(title)}</title></path>`);
+  const marker = (classes, place, text, title) => {
+    const point = boardPoint(place);
+    glyphs.push(`<g class="${classes}" transform="translate(${point.x.toFixed(1)} ${point.y.toFixed(1)})"><title>${escapeHtml(title)}</title><circle r="12"/><text y="3">${escapeHtml(text)}</text></g>`);
+  };
+  const label = (item, text) => {
+    const place = item.destination ?? item.origin;
+    if (!place) return;
+    const point = boardPoint(place);
+    labels.push(`<text class="order-label" x="${(point.x + 14).toFixed(1)}" y="${(point.y - 14).toFixed(1)}">${escapeHtml(text)}</text>`);
+  };
+  for (const item of model.orderOverlays) {
+    const { order, origin, destination, target, route } = item;
+    const sourceClass = `order-${item.source}`;
+    const subject = item.unit ? `${faction(item.unit.faction)?.name ?? "Unknown"} ${item.unit.type}` : "Adjustment";
+    if (order.type === "hold" && origin) {
+      marker(`order-glyph order-hold ${sourceClass}`, origin, "H", `${subject} holds in ${origin.name}`);
+      label(item, "Hold · str 1");
+    } else if (order.type === "move" && origin && destination) {
+      const title = `${subject} moves from ${origin.name} to ${destination.name}${order.viaConvoy ? " by convoy" : ""}`;
+      line(`order-path order-move ${sourceClass}`, routePath(origin, destination), title);
+      marker(`order-glyph order-move ${sourceClass}`, destination, order.viaConvoy ? "↝" : "→", title);
+      for (let index = 0; index < route.length - 1; index += 1) {
+        const routePlace = route[index];
+        const nextPlace = route[index + 1];
+        const seaRoute = routePlace.kind === "sea" ? routePlace : nextPlace.kind === "sea" ? nextPlace : null;
+        line(`order-path order-convoy-route ${sourceClass}`, seaRoute ? seaLanePath(seaRoute, routePlace, nextPlace) : routePath(routePlace, nextPlace), title);
+      }
+      label(item, `${order.viaConvoy ? "Convoy move" : "Move"} · str 1`);
+    } else if (order.type === "support" && origin && target) {
+      const supportDestination = destination ?? target;
+      const supportMove = Boolean(destination);
+      const title = `${subject} supports ${item.targetUnit ? faction(item.targetUnit.faction)?.name ?? "unit" : "unit"} ${supportMove ? `to ${supportDestination.name}` : "to hold"}`;
+      line(`order-path ${supportMove ? "order-support-move" : "order-support-hold"} ${sourceClass}`, orderCurvePath(origin, supportDestination, supportMove ? 44 : -36), title);
+      marker(`order-glyph ${supportMove ? "order-support-move" : "order-support-hold"} ${sourceClass}`, supportDestination, supportMove ? "S→" : "S", title);
+      label({ ...item, destination: supportDestination }, `${supportMove ? "Support move" : "Support hold"} · +1`);
+    } else if (order.type === "convoy" && origin && target && destination) {
+      const title = `${subject} convoys ${item.targetUnit ? faction(item.targetUnit.faction)?.name ?? "army" : "army"} to ${destination.name}`;
+      line(`order-path order-convoy ${sourceClass}`, orderCurvePath(origin, destination, -52), title);
+      marker(`order-glyph order-convoy ${sourceClass}`, origin, "C", title);
+      label(item, "Convoy route");
+    } else if (order.type === "retreat" && origin && destination) {
+      const title = `${subject} retreats from ${origin.name} to ${destination.name}`;
+      line(`order-path order-retreat ${sourceClass}`, routePath(origin, destination), title);
+      marker(`order-glyph order-retreat ${sourceClass}`, destination, "R", title);
+      label(item, "Retreat");
+    } else if ((order.type === "build" || order.type === "disband") && (destination || origin)) {
+      const place = destination ?? origin;
+      const title = order.type === "build" ? `Build ${order.unitType} in ${place.name}` : `${subject} disbands in ${place.name}`;
+      marker(`order-glyph order-adjust ${order.type === "disband" ? "order-disband" : "order-build"} ${sourceClass}`, place, order.type === "build" ? "+" : "−", title);
+      label({ ...item, destination: place }, order.type === "build" ? `Build ${order.unitType}` : "Disband");
+    }
+  }
+  return `<svg class="map-order-overlay-layer" ${mapLayerAttributes("orders", model)} data-planned-orders="${model.plannedOrders.length}" data-current-orders="${model.currentOrders.length}" viewBox="0 0 ${BOARD_WIDTH} ${BOARD_HEIGHT}" preserveAspectRatio="none" aria-hidden="true"><defs><marker id="order-arrowhead" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z"/></marker></defs><g class="order-paths">${paths.join("")}</g><g class="order-glyphs">${glyphs.join("")}</g><g class="order-labels">${labels.join("")}</g></svg>`;
 }
 
 function renderInspectorLayer(model) {
