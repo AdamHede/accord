@@ -551,6 +551,8 @@ function applyMapViewport() {
   const displayMode = currentMapDisplayMode(viewport);
   const zoomLevel = currentMapZoomLevel(mapViewport.scale, displayMode);
   map.style.transform = `translate3d(${mapViewport.x}px, ${mapViewport.y}px, 0) scale(${mapViewport.scale})`;
+  map.style.setProperty("--map-scale", mapViewport.scale.toFixed(4));
+  map.style.setProperty("--label-screen-scale", (1 / mapViewport.scale).toFixed(4));
   map.dataset.zoomLevel = zoomLevel;
   map.dataset.displayMode = displayMode;
   map.classList.remove(...MAP_ZOOM_CLASSES, "regional-zoom");
