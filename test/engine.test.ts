@@ -64,6 +64,10 @@ describe("world board graph", () => {
     expect(PROVINCES.water_awc_sib.neighbors).toEqual(expect.arrayContaining(["awc", "sib"]));
     expect(PROVINCES.ena.neighbors).toContain("gla");
     expect(PROVINCES.ena.neighbors).toContain("water_car_ena");
+    expect(PROVINCES.gla.neighbors).toEqual(expect.arrayContaining(["awc", "mex"]));
+    expect(PROVINCES.weu.neighbors).toContain("bal");
+    expect(PROVINCES.lib.neighbors).toEqual(expect.arrayContaining(["con", "lev", "waf"]));
+    expect(PROVINCES.sib.neighbors).toEqual(expect.arrayContaining(["cas", "man"]));
     expect(supplyCenters.every((province) => province.kind === "home" || province.kind === "neutral")).toBe(true);
     expect(FACTIONS).toHaveLength(5);
     expect(FACTIONS.every((faction) => faction.homes.length === 3)).toBe(true);
