@@ -252,9 +252,13 @@ function movementOptionsFor(unit) {
   }
   if (unit.type === "fleet" && province(unit.provinceId)?.kind === "sea") {
     for (const army of activeUnits().filter((candidate) => candidate.type === "army")) {
-      const armyOrder = drafts[army.id];
-      if (armyOrder?.type === "move" && armyOrder.viaConvoy && seaCanParticipateInConvoy(unit, army, armyOrder.destination)) {
-        options.push({ value: `convoy:${army.id}:${armyOrder.destination}`, label: `Convoy ${unitLabel(army)} to ${province(armyOrder.destination)?.name ?? armyOrder.destination}` });
+      const destinations = game.map
+        .filter((place) => hasPotentialConvoyRoute(army, place.id) && seaCanParticipateInConvoy(unit, army, place.id))
+        .map((place) => place.id);
+      for (const destination of destinations) {
+        const armyOrder = drafts[army.id];
+        const coordinated = armyOrder?.type === "move" && armyOrder.viaConvoy && armyOrder.destination === destination;
+        options.push({ value: `convoy:${army.id}:${destination}`, label: `${coordinated ? "Convoy" : "Prepare convoy for"} ${unitLabel(army)} to ${province(destination)?.name ?? destination}` });
       }
     }
   }
@@ -1106,9 +1110,10 @@ function renderScores() {
 function renderChat() {
   const messages = game.chats.map((message) => `<div class="message ${message.recipientId ? "private" : ""}"><div class="message-head"><span>${escapeHtml(message.authorName)}${message.recipientId ? ` → ${escapeHtml(player(message.recipientId)?.name ?? "private")}` : ""}</span><span>${new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span></div>${escapeHtml(message.body)}</div>`).join("") || `<p class="status-copy">No negotiations yet. Make the first offer.</p>`;
   $("#chat").innerHTML = messages;
-  const selected = $("#chat-recipient").value;
-  $("#chat-recipient").innerHTML = `<option value="">Public council</option>${envoys().filter((candidate) => candidate.id !== session.playerId).map((candidate) => `<option value="${candidate.id}">Private: ${escapeHtml(candidate.name)}</option>`).join("")}`;
-  $("#chat-recipient").value = selected;
+  const recipientSelect = $("#chat-recipient");
+  const selected = recipientSelect.value;
+  recipientSelect.innerHTML = `<option value="">Public council</option>${envoys().filter((candidate) => candidate.id !== session.playerId).map((candidate) => `<option value="${candidate.id}">Private: ${escapeHtml(candidate.name)}</option>`).join("")}`;
+  recipientSelect.value = Array.from(recipientSelect.options).some((option) => option.value === selected) ? selected : "";
   $("#chat").scrollTop = $("#chat").scrollHeight;
 }
 
@@ -1135,7 +1140,11 @@ window.addEventListener("pagehide", () => { void releaseScreenWakeLock(); });
 document.addEventListener("fullscreenchange", () => { $("#spectator-fullscreen").textContent = document.fullscreenElement ? "Exit fullscreen" : "Fullscreen"; updateMapDisplayMode(); });
 
 const inviteRoomCode = new URLSearchParams(location.search).get("room")?.toUpperCase().replace(/[^A-Z0-9]/g, "");
-if (inviteRoomCode) $("#join-code").value = inviteRoomCode.slice(0, 6);
+if (inviteRoomCode) {
+  $("#join-code").value = inviteRoomCode.slice(0, 6);
+  $("#landing-error").textContent = `Joining invited room ${$("#join-code").value}. Enter your display name to continue.`;
+  $("#join-name").focus();
+}
 
 if (session) {
   api(`/api/rooms/${session.roomCode}/state`, { headers: { "X-Player-Id": session.playerId, "X-Player-Token": session.playerToken } }).then((state) => { game = state; activeTurn = game.turn; resetDrafts(); render(); openSocket(); }).catch(() => { localStorage.removeItem(sessionKey); session = null; });
