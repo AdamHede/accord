@@ -349,6 +349,12 @@ function ownedSupplyCenters(game: Game, playerId: string): string[] {
 
 export function publicView(game: Game, playerId: string): GameView {
   normalizeGame(game);
+  const viewer = game.players.find((player) => player.id === playerId);
+  const visiblePendingRetreats = Object.fromEntries(Object.entries(game.pendingRetreats).map(([unitId, retreat]) => {
+    const unit = game.units.find((candidate) => candidate.id === retreat.unitId);
+    const canSeeDestinations = viewer && isEnvoy(viewer) && unit?.ownerId === playerId;
+    return [unitId, canSeeDestinations ? retreat : { ...retreat, destinations: [] }];
+  }));
   return {
     roomCode: game.roomCode,
     hostPlayerId: game.hostPlayerId,
@@ -361,7 +367,7 @@ export function publicView(game: Game, playerId: string): GameView {
     control: game.control,
     ordersSubmitted: Object.keys(game.orders),
     ordersRequired: requiredSubmitterIds(game),
-    pendingRetreats: game.pendingRetreats,
+    pendingRetreats: visiblePendingRetreats,
     adjustmentNeeds: game.adjustmentNeeds,
     chats: game.chats.filter((message) => message.recipientId === null || message.recipientId === playerId || message.authorId === playerId),
     activity: game.activity,
@@ -1070,6 +1076,7 @@ function resolveAdjustmentPhase(game: Game, id: () => string): void {
   }
 
   game.units = game.units.filter((unit) => !disbands.has(unit.id));
+  let buildCount = 0;
   for (const build of builds) {
     if (build.type !== "build") continue;
     const ownerId = game.control[build.provinceId];
@@ -1083,9 +1090,9 @@ function resolveAdjustmentPhase(game: Game, id: () => string): void {
       provinceId: build.provinceId,
       type: build.unitType
     });
+    buildCount += 1;
   }
 
-  const buildCount = builds.length;
   const disbandCount = disbands.size;
   game.adjustmentNeeds = {};
   game.orders = {};

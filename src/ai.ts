@@ -80,10 +80,11 @@ export function addAiEnvoy(game: Game, now = Date.now()): StoredPlayer {
   const taken = new Set(game.players.map((player) => player.faction).filter(Boolean));
   const faction = FACTIONS.find((candidate) => !taken.has(candidate.id));
   if (!faction) throw new Error("No faction is available for another AI envoy.");
+  const name = `${AI_NAME} — ${faction.name}`;
   const player: StoredPlayer & { ai: true } = {
     id: crypto.randomUUID(),
     token: `ai-token-${crypto.randomUUID()}`,
-    name: AI_NAME,
+    name,
     role: "envoy",
     faction: faction.id,
     joinedAt: now,

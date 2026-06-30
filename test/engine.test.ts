@@ -4,6 +4,7 @@ import {
   Game,
   LAND_PROVINCE_COUNT,
   PROVINCES,
+  publicView,
   resolveTurn,
   scoreFor,
   SEA_PROVINCE_COUNT,
@@ -326,6 +327,21 @@ describe("retreats and ownership timing", () => {
     expect(game.units.map((candidate) => candidate.id)).not.toContain("c1");
   });
 
+  it("redacts retreat destinations from other players' public views", () => {
+    const game = gameWith([
+      unit("a1", alice, "pan"),
+      unit("b1", bruno, "and")
+    ], {
+      status: "retreats",
+      pendingRetreats: {
+        b1: { unitId: "b1", from: "and", attackerFrom: "pan", destinations: ["ama"] }
+      }
+    });
+
+    expect(publicView(game, bruno.id).pendingRetreats.b1.destinations).toEqual(["ama"]);
+    expect(publicView(game, alice.id).pendingRetreats.b1.destinations).toEqual([]);
+  });
+
   it("updates supply-center ownership only after Fall resolution", () => {
     const game = gameWith([unit("a1", alice, "yuc")], { control: {} });
     game.orders[alice.id] = [{ unitId: "a1", type: "move", destination: "pan" }];
@@ -373,6 +389,24 @@ describe("winter adjustments", () => {
     expect(game.status).toBe("orders");
     expect(game.season).toBe("spring");
     expect(game.year).toBe(2);
+  });
+
+  it("reports only successful winter builds", () => {
+    const game = gameWith([unit("a1", alice, "gla")], {
+      status: "adjustments",
+      season: "winter",
+      control: { gla: alice.id, cal: alice.id },
+      adjustmentNeeds: { [alice.id]: 2 }
+    });
+    game.orders[alice.id] = [
+      { type: "build", provinceId: "gla", unitType: "army" },
+      { type: "build", provinceId: "cal", unitType: "army" }
+    ];
+
+    resolveTurn(game, nextId);
+
+    expect(game.units.filter((candidate) => candidate.ownerId === alice.id)).toHaveLength(2);
+    expect(game.activity[0].text).toContain("1 build and 0 disbands");
   });
 
   it("requires surplus players to disband enough units", () => {

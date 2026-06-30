@@ -22,10 +22,22 @@ describe("agentic AI envoy", () => {
     const game = lobby();
     const ai = addAiEnvoy(game, 100);
 
-    expect(ai.name).toBe("Accord AI");
+    expect(ai.name).toBe(`Accord AI — ${FACTIONS[1].name}`);
     expect(ai.faction).toBe(FACTIONS[1].id);
     expect(aiEnvoys(game).map((player) => player.id)).toEqual([ai.id]);
     expect(humanEnvoys(game).map((player) => player.id)).toEqual([host.id]);
+  });
+
+  it("gives multiple AI envoys distinct names", () => {
+    const game = lobby();
+    const first = addAiEnvoy(game, 100);
+    const second = addAiEnvoy(game, 101);
+
+    expect(first.name).not.toBe(second.name);
+    expect(aiEnvoys(game).map((player) => player.name)).toEqual([
+      `Accord AI — ${FACTIONS[1].name}`,
+      `Accord AI — ${FACTIONS[2].name}`
+    ]);
   });
 
   it("can produce deterministic legal orders for simulator and API-key-free tests", async () => {
